@@ -5,13 +5,17 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
+import { distance } from "@/util/mathUtil";
 
 export default class App {
 
     constructor() {
         this.raycaster = new THREE.Raycaster();
         this.onPointerDown = this.onPointerDown.bind(this);
+        this.onPointerUp = this.onPointerUp.bind(this);
         window.addEventListener('pointerdown', this.onPointerDown);
+        window.addEventListener('pointerup', this.onPointerUp);
+
 
         this.scene = new THREE.Scene();
 
@@ -92,26 +96,38 @@ export default class App {
     }
 
     onPointerDown(e) {
-        if (e.button == 2) {
-            //From -1 to 1
-            const mouse = {};
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        if (e.button == 0) {
+            this.clickStartLoc = { x: e.clientX, y: e.clientY };
+        } else if (e.button == 2) {
+            this.earth.setSelected(false);
+            this.resetCameraUp();
+        }
+    }
 
-            this.raycaster.setFromCamera(mouse, this.camera.getObject3D());
+    onPointerUp(e) {
+        if (e.button == 0) {
+            const currentLoc = { x: e.clientX, y: e.clientY };
+            if (distance(this.clickStartLoc, currentLoc) <= 5) {
+                const mouse = {};
+                //From -1 to 1
+                mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
+                mouse.y = -(currentLoc.y / window.innerHeight) * 2 + 1;
 
-            let intersects = this.raycaster.intersectObjects(this.scene.children, true);
-            intersects = intersects.filter((o) => o.object.name === "EarthMesh");
+                this.raycaster.setFromCamera(mouse, this.camera.getObject3D());
 
-            if (intersects.length > 0) {
-                const intersection = intersects[0];
-                console.log("Intersection with earth:", intersection);
+                let intersects = this.raycaster.intersectObjects(this.scene.children, true);
+                intersects = intersects.filter((o) => o.object.name === "EarthMesh");
 
-                this.earth.setSelected(true);
-                this.setCameraUpToEarth();
-            } else {
-                this.earth.setSelected(false);
-                this.resetCameraUp();
+                if (intersects.length > 0) {
+                    const intersection = intersects[0];
+                    console.log("Intersection with earth:", intersection);
+
+                    this.earth.setSelected(true);
+                    this.setCameraUpToEarth();
+                } else {
+                    this.earth.setSelected(false);
+                    this.resetCameraUp();
+                }
             }
         }
     }

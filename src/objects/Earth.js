@@ -10,7 +10,7 @@ export default class Earth {
         this.rotationSpeed = rotationSpeed;
         this.cloudRotationSpeed = rotationSpeed * 0.08; //Adding to the earth rotation
         this.axialTilt = new THREE.Object3D();
-        this.axialTilt.rotation.x = THREE.MathUtils.degToRad(axialTilt);
+        this.axialTilt.rotation.z = THREE.MathUtils.degToRad(axialTilt);
         this.group.add(this.axialTilt);
 
         this.earthMesh = createEarthMesh(radiusKm)
