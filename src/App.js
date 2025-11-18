@@ -1,0 +1,89 @@
+import * as THREE from 'three';
+import { createRenderer, createBloomComposer } from "@/core/renderer";
+import Earth from '@/objects/Earth';
+import StarField from '@/objects/StarField';
+import Sun from '@/objects/Sun';
+import Camera from '@/core/Camera';
+import Controls from '@/core/Controls';
+
+export default class App {
+
+    constructor() {
+        this.scene = new THREE.Scene();
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.01); //default: 0.01
+        this.scene.add(ambientLight);
+
+        //EARTH
+        this.earth = new Earth(6371, 23.4, 0.144); //Quite fast rotation: 0.144, actual speed: 2 * Math.PI / 86164.09 (once in a sidereal day)
+        this.earth.setPosition(150000000, 0, 0);
+        this.scene.add(this.earth.getObject3D());
+
+        //CAMERA
+        this.camera = new Camera(50, this.earth.getPosition().x, 0, 15000);
+        this.scene.add(this.camera.getObject3D());
+
+        //RENDERING
+        this.renderer = createRenderer();
+
+        //BLOOM
+        this.bloomComposer = createBloomComposer(this.renderer, this.scene, this.camera.getObject3D());
+
+        //STARS
+        this.starField = new StarField();
+        this.starField.setPositionVec(this.camera.getPosition());
+        this.scene.add(this.starField.getObject3D());
+
+        //SUN
+        this.sun = new Sun(696340);
+        this.scene.add(this.sun.getObject3D());
+
+        //CONTROLS
+        this.controls = new Controls(this.camera, this.renderer, this.earth.getPositionGameUnit());
+    }
+
+    start() {
+        this.lastTime = 0;
+        this.count = 0;
+        this.animate = this.animate.bind(this); //Creates a new function with 'this' binded to App
+        this.renderer.setAnimationLoop(this.animate);
+
+        window.addEventListener('resize', () => {
+            this.camera.getObject3D().aspect = window.innerWidth / window.innerHeight;
+            this.camera.getObject3D().updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.bloomComposer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    animate(time) { //Time keeps increasing (ms)
+        const delta = (time - this.lastTime) / 1000;
+        this.lastTime = time;
+
+        this.earth.update(delta);
+        this.starField.setPositionVec(this.camera.getPosition());
+
+        this.count += delta;
+        if (this.count >= 1) { //Updates every second
+            this.count = 0;
+        }
+
+        this.controls.update();
+
+        this.bloomComposer.render();
+    }
+
+    darkenNonBloomed(obj) {
+        if (obj.isMesh && this.bloomLayer.test(obj.layers) === false) {
+            this.materials[obj.uuid] = obj.material;
+            obj.material = this.darkMaterial;
+        }
+    }
+
+    restoreMaterial(obj) {
+        if (this.materials[obj.uuid]) {
+            obj.material = this.materials[obj.uuid];
+            delete this.materials[obj.uuid];
+        }
+    }
+}

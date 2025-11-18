@@ -1,0 +1,25 @@
+Light intensity stuff:
+
+E = Illuminance in lux (lux or lm/m^2)
+I = Luminous intensity in candela (cd)
+Φ = Luminous flux (lumen, lm)
+r = Distance in metres
+
+Lumens measure a light source's total light output, while candelas measure the intensity in a specific direction, and lux measures how much light falls on a surface.
+
+For example, if you have a flashlight that is 2 lumens, and you tighten the beam, it will have higher intensity, so more cancelas. Intensity and distance affect how much the light illuminates the surface in lux.
+
+
+Illuminance based on intensity and distance (inverse-square law):
+E = I​ / r^2
+
+Tilt / cosine term, when surface is not perpendicular:
+E = I​ * cos(theta) / r^2
+where theta is the angle between surface normal and light direction (towards the light source).
+
+Candela <-> lumen (direction vs total flux):
+Φ = I * Ω
+I = Φ / Ω
+where Ω is the solid angle in steradians.
+If a light source is isotropic, meaning it is uniform in all directions, then Ω = 4pi.
+

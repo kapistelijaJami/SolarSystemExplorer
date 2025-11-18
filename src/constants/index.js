@@ -1,0 +1,1 @@
+export const UNIT_SCALING_FACTOR = 1000;
