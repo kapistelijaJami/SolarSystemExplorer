@@ -9,6 +9,10 @@ import Controls from '@/core/Controls';
 export default class App {
 
     constructor() {
+        this.raycaster = new THREE.Raycaster();
+        this.onPointerDown = this.onPointerDown.bind(this);
+        window.addEventListener('pointerdown', this.onPointerDown);
+
         this.scene = new THREE.Scene();
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.01); //default: 0.01
@@ -20,7 +24,7 @@ export default class App {
         this.scene.add(this.earth.getObject3D());
 
         //CAMERA
-        this.camera = new Camera(50, this.earth.getPosition().x, 0, 15000);
+        this.camera = new Camera(50, this.earth.getPosition().x, 0, 20000);
         this.scene.add(this.camera.getObject3D());
 
         //RENDERING
@@ -85,5 +89,51 @@ export default class App {
             obj.material = this.materials[obj.uuid];
             delete this.materials[obj.uuid];
         }
+    }
+
+    onPointerDown(e) {
+        if (e.button == 2) {
+            //From -1 to 1
+            const mouse = {};
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            this.raycaster.setFromCamera(mouse, this.camera.getObject3D());
+
+            let intersects = this.raycaster.intersectObjects(this.scene.children, true);
+            intersects = intersects.filter((o) => o.object.name === "EarthMesh");
+
+            if (intersects.length > 0) {
+                const intersection = intersects[0];
+                console.log("Intersection with earth:", intersection);
+
+                this.earth.setSelected(true);
+                this.setCameraUpToEarth();
+            } else {
+                this.earth.setSelected(false);
+                this.resetCameraUp();
+            }
+        }
+    }
+
+    setCameraUpToEarth() {
+        const localUp = new THREE.Vector3(0, 1, 0);
+        const quat = this.earth.axialTilt.getWorldQuaternion(new THREE.Quaternion());
+        const earthUpWorld = localUp.applyQuaternion(quat);
+        this.camera.getObject3D().up.copy(earthUpWorld); //Rotate camera to match earth up
+
+        //Must create new OrbitControls, since camera up is baked in on its creation
+        this.resetControls();
+    }
+
+    resetCameraUp() {
+        this.camera.getObject3D().up.copy(new THREE.Vector3(0, 1, 0));
+        this.resetControls();
+    }
+
+    resetControls() {
+        const temp = new Controls(this.camera, this.renderer, this.controls.getTarget());
+        this.controls.dispose();
+        this.controls = temp;
     }
 }

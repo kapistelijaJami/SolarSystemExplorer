@@ -5,14 +5,17 @@ export default class Earth {
     constructor(radiusKm, axialTilt, rotationSpeed) { //rotationSpeed in radians per second
         this.group = new THREE.Group(); //The parent of everything. Handles position at least.
 
+        this.selected = false;
+
         this.rotationSpeed = rotationSpeed;
-        this.cloudRotationSpeed = rotationSpeed * 0.1; //Adding to the earth rotation
+        this.cloudRotationSpeed = rotationSpeed * 0.08; //Adding to the earth rotation
         this.axialTilt = new THREE.Object3D();
         this.axialTilt.rotation.x = THREE.MathUtils.degToRad(axialTilt);
         this.group.add(this.axialTilt);
 
         this.earthMesh = createEarthMesh(radiusKm)
         this.axialTilt.add(this.earthMesh);
+        this.earthMesh.name = "EarthMesh";
 
         this.clouds = createEarthClouds(radiusKm);
         this.earthMesh.add(this.clouds); //Moves with the earth (earth is the parent)
@@ -22,7 +25,7 @@ export default class Earth {
 
 
         //WIREFRAME (Do lat-long version)
-        const wireGeo = new THREE.SphereGeometry(kmToGameUnit(6371 + 38.5), 32, 32);
+        /*const wireGeo = new THREE.SphereGeometry(kmToGameUnit(6371 + 38.5), 32, 32);
         const wireMat = new THREE.MeshBasicMaterial({
             color: 0x070707,
             transparent: true,
@@ -30,13 +33,16 @@ export default class Earth {
             wireframe: true
         });
 
-        this.wireSphere = new THREE.Mesh(wireGeo, wireMat);
+        this.wireSphere = new THREE.Mesh(wireGeo, wireMat);*/
         //this.earthMesh.add(this.wireSphere);
 
-        const latLines = createLatitudeLines(kmToGameUnit(6371 + 10), 128, 17, 0x070707);
-        const longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, 0x070707);
-        this.earthMesh.add(latLines);
-        this.earthMesh.add(longLines);
+        this.latLines = createLatitudeLines(kmToGameUnit(6371 + 10), 128, 17, 0x070707);
+        this.longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, 0x070707);
+        this.earthMesh.add(this.latLines);
+        this.earthMesh.add(this.longLines);
+
+        this.latLines.visible = false;
+        this.longLines.visible = false;
 
 
         //ATMOSPHERE (make better first)
@@ -72,6 +78,20 @@ export default class Earth {
     update(delta) {
         this.earthMesh.rotation.y += this.rotationSpeed * delta;
         this.clouds.rotation.y += this.cloudRotationSpeed * delta;
+
+        if (this.selected) {
+            this.latLines.visible = true;
+            this.longLines.visible = true;
+            this.axes.visible = true;
+        } else {
+            this.latLines.visible = false;
+            this.longLines.visible = false;
+            this.axes.visible = false;
+        }
+    }
+
+    setSelected(bool) {
+        this.selected = bool;
     }
 
     getObject3D() {
@@ -113,38 +133,23 @@ function createEarthClouds(radiusKm) {
     return new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm + 5), 128, 128), cloudMaterial);
 }
 
-/*function createLatitudeLines(radius = 1, segments = 64, count = 8) {
-    const group = new THREE.Group();
-
-    for (let i = 1; i <= count; i++) {
-        const theta = (i / (count + 1)) * Math.PI - Math.PI / 2;
-        const r = radius * Math.cos(theta);
-        const y = radius * Math.sin(theta);
-
-        const geo = new THREE.CircleGeometry(r, segments);
-        //geo.vertices.shift(); // remove center vertex
-
-        const mat = new THREE.LineBasicMaterial({ color: 0xffffff });
-        const circle = new THREE.LineLoop(geo, mat);
-        circle.rotation.x = Math.PI / 2;
-        circle.position.y = y;
-
-        group.add(circle);
-    }
-
-    return group;
-}*/
-
 function createLatitudeLines(radius = 1, segments = 128, count = 8, color = 0xffffff) {
     const group = new THREE.Group();
     const mat = new THREE.LineBasicMaterial({
         color: color,
         transparent: true,
-        opacity: 0.7
+        opacity: 0.5
+    });
+
+    const matEquator = new THREE.LineBasicMaterial({
+        color: 0x990000,
+        transparent: true,
+        opacity: 0.8
     });
 
     for (let i = 1; i <= count; i++) {
         // latitude angle from -PI/2 -> +PI/2, skip poles
+        let equator = (i == Math.floor(count / 2) + 1);
         const theta = (i / (count + 1)) * Math.PI - Math.PI / 2;
         const r = radius * Math.cos(theta);
         const y = radius * Math.sin(theta);
@@ -158,7 +163,7 @@ function createLatitudeLines(radius = 1, segments = 128, count = 8, color = 0xff
 
         const geo = new THREE.BufferGeometry().setFromPoints(pts);
         // setFromPoints gives a non-indexed position buffer. LineLoop expects the loop to close automatically.
-        const loop = new THREE.LineLoop(geo, mat);
+        const loop = new THREE.LineLoop(geo, equator ? matEquator : mat);
         group.add(loop);
     }
 
@@ -170,7 +175,7 @@ function createLongitudeLines(radius = 1, latSegments = 64, count = 12, color = 
     const mat = new THREE.LineBasicMaterial({
         color: color,
         transparent: true,
-        opacity: 0.7
+        opacity: 0.5
     });
 
     for (let i = 0; i < count; i++) {

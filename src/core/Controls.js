@@ -10,6 +10,14 @@ export default class Controls {
         this.controls.target.copy(targetPos);
     }
 
+    getTarget() {
+        return this.controls.target;
+    }
+
+    dispose() {
+        this.controls.dispose();
+    }
+
     update() {
         this.controls.update();
     }
