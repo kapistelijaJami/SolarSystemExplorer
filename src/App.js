@@ -162,5 +162,9 @@ export default class App {
         const temp = new Controls(this.camera, this.renderer, this.controls.getTarget());
         this.controls.dispose();
         this.controls = temp;
+        this.controls.update();
+
+        //Fix touch-action for mobile (OrbitControls turns this to 'auto' when I dispose of the old one, and it breaks the controls)
+        this.renderer.domElement.style.touchAction = 'none';
     }
 }
