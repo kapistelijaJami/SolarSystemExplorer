@@ -5,7 +5,7 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance } from "@/util/mathUtil";
+import { distance2D } from "@/util/mathUtil";
 
 export default class App {
 
@@ -13,8 +13,10 @@ export default class App {
         this.raycaster = new THREE.Raycaster();
         this.onPointerDown = this.onPointerDown.bind(this);
         this.onPointerUp = this.onPointerUp.bind(this);
+        this.onKeyDown = this.onKeyDown.bind(this);
         window.addEventListener('pointerdown', this.onPointerDown);
         window.addEventListener('pointerup', this.onPointerUp);
+        window.addEventListener('keydown', this.onKeyDown);
 
 
         this.scene = new THREE.Scene();
@@ -28,7 +30,7 @@ export default class App {
         this.scene.add(this.earth.getObject3D());
 
         //CAMERA
-        this.camera = new Camera(50, this.earth.getPosition().x, 0, 20000);
+        this.camera = new Camera(50, this.earth.getPosition().x - 20000, 0, 0);
         this.scene.add(this.camera.getObject3D());
 
         //RENDERING
@@ -107,7 +109,7 @@ export default class App {
     onPointerUp(e) {
         if (e.button == 0) {
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (distance(this.clickStartLoc, currentLoc) <= 5) {
+            if (distance2D(this.clickStartLoc, currentLoc) <= 5) {
                 const mouse = {};
                 //From -1 to 1
                 mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
@@ -123,7 +125,7 @@ export default class App {
                     console.log("Intersection with earth:", intersection);
 
                     this.earth.setSelected(true);
-                    this.setCameraUpToEarth();
+                    this.setCameraUpToEarthUp();
                 } else {
                     this.earth.setSelected(false);
                     this.resetCameraUp();
@@ -132,11 +134,20 @@ export default class App {
         }
     }
 
-    setCameraUpToEarth() {
+    onKeyDown(e) {
+        if (e.repeat) {
+            return;
+        }
+        if (e.code === 'KeyW') {
+            console.log(e);
+        }
+    }
+
+    setCameraUpToEarthUp() {
         const localUp = new THREE.Vector3(0, 1, 0);
         const quat = this.earth.axialTilt.getWorldQuaternion(new THREE.Quaternion());
         const earthUpWorld = localUp.applyQuaternion(quat);
-        this.camera.getObject3D().up.copy(earthUpWorld); //Rotate camera to match earth up
+        this.camera.setUpVector(earthUpWorld); //Rotate camera up to match earth up
 
         //Must create new OrbitControls, since camera up is baked in on its creation
         this.resetControls();

@@ -24,6 +24,10 @@ export default class Camera {
         this.camera.position.copy(kmToGameUnit3D(vectorKm));
     }
 
+    setUpVector(upWorld) {
+        this.camera.up.copy(upWorld);
+    }
+
     getObject3D() {
         return this.camera;
     }

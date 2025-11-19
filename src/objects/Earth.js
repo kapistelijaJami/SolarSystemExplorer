@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { kmToGameUnit, gameUnitToKm3D, kmToGameUnit3D } from '@/util/gameUtil';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
 export default class Earth {
     constructor(radiusKm, axialTilt, rotationSpeed) { //rotationSpeed in radians per second
@@ -10,7 +13,7 @@ export default class Earth {
         this.rotationSpeed = rotationSpeed;
         this.cloudRotationSpeed = rotationSpeed * 0.08; //Adding to the earth rotation
         this.axialTilt = new THREE.Object3D();
-        this.axialTilt.rotation.z = THREE.MathUtils.degToRad(axialTilt);
+        this.axialTilt.rotation.z = -THREE.MathUtils.degToRad(axialTilt);
         this.group.add(this.axialTilt);
 
         this.earthMesh = createEarthMesh(radiusKm)
@@ -37,12 +40,16 @@ export default class Earth {
         //this.earthMesh.add(this.wireSphere);
 
         this.latLines = createLatitudeLines(kmToGameUnit(6371 + 10), 128, 17, 0x070707);
-        this.longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, 0x070707);
+        this.longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, kmToGameUnit(10), 0x070707);
         this.earthMesh.add(this.latLines);
         this.earthMesh.add(this.longLines);
 
         this.latLines.visible = false;
         this.longLines.visible = false;
+
+
+        this.clouds.renderOrder = 0; //Render clouds first
+        this.longLines.renderOrder = 1;
 
 
         //ATMOSPHERE (make better first)
@@ -115,7 +122,9 @@ function createEarthMesh(radiusKm) {
         //bumpMap: bumpMap,
         //bumpScale: 2,
         roughness: 1,
-        metalness: 0
+        metalness: 0,
+        //transparent: true,
+        //opacity: 1
     });
     return new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm), 128, 128), earthMaterial);
 }
@@ -126,20 +135,22 @@ function createEarthClouds(radiusKm) {
     const cloudMaterial = new THREE.MeshStandardMaterial({
         alphaMap: cloudTexture,
         transparent: true,
-        opacity: 1.3,
-        depthWrite: false, //Prevents z-fighting so cloud doesn't block planet normals
+        //opacity: 1.3,
+        //depthWrite: false, //Prevents z-fighting so cloud doesn't block planet normals
         //side: THREE.DoubleSide,
     });
     return new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm + 5), 128, 128), cloudMaterial);
 }
 
-function createLatitudeLines(radius = 1, segments = 128, count = 8, color = 0xffffff) {
+function createLatitudeLines(radius = 1, segments = 128, count = 8, color = 0xffffff) { //TODO: Do the same line types longitude lines will be
     const group = new THREE.Group();
     const mat = new THREE.LineBasicMaterial({
         color: color,
         transparent: true,
         opacity: 0.5
     });
+    mat.depthWrite = false;
+    mat.depthTest = true;
 
     const matEquator = new THREE.LineBasicMaterial({
         color: 0x990000,
@@ -170,17 +181,31 @@ function createLatitudeLines(radius = 1, segments = 128, count = 8, color = 0xff
     return group;
 }
 
-function createLongitudeLines(radius = 1, latSegments = 64, count = 12, color = 0xffffff) {
+function createLongitudeLines(radius = 1, latSegments = 64, count = 12, linewidth = 0.05, color = 0xffffff) {
     const group = new THREE.Group();
+
     const mat = new THREE.LineBasicMaterial({
         color: color,
         transparent: true,
         opacity: 0.5
     });
 
-    for (let i = 0; i < count; i++) {
-        const phi = (i / count) * Math.PI * 2; // longitude angle
+    const matWider = new LineMaterial({
+        color: 0x000000,
+        linewidth: kmToGameUnit(15),
+        transparent: true,
+        opacity: 0.6,
+        worldUnits: true
+    });
+
+    for (let angle = 0; angle < 360; angle += 10) {
+        let wider = angle === 0;
+        wider = false; //all are normal for now
+
+        //const phi = (i / count) * Math.PI * 2; // longitude angle
+        const phi = (angle / 360) * Math.PI * 2;
         const pts = [];
+        const ptsWide = [];
 
         // sweep from south to north pole
         for (let j = 0; j <= latSegments; j++) {
@@ -188,11 +213,27 @@ function createLongitudeLines(radius = 1, latSegments = 64, count = 12, color = 
             const x = radius * Math.cos(t) * Math.cos(phi);
             const y = radius * Math.sin(t);
             const z = radius * Math.cos(t) * Math.sin(phi);
-            pts.push(new THREE.Vector3(x, y, z));
+            if (wider) {
+                ptsWide.push(x);
+                ptsWide.push(y);
+                ptsWide.push(z);
+            } else {
+                pts.push(new THREE.Vector3(x, y, z));
+            }
         }
 
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const line = new THREE.Line(geo, mat);
+        let line;
+        if (wider) { //TODO: Make a version where it doesn't overlap on itself
+            const geometry = new LineGeometry();
+            geometry.setPositions(ptsWide);
+
+            line = new Line2(geometry, matWider);
+            line.computeLineDistances();
+        } else { //Normal line //TODO: Make a version with world units so thickness scales with how close camera is
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            line = new THREE.Line(geo, mat);
+        }
+
         group.add(line);
     }
 
