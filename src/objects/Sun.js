@@ -11,6 +11,7 @@ export default class Sun {
 
         this.sun = new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm), 64, 64), sunMat);
         this.sun.position.set(0, 0, 0);
+        this.sun.name = "SunMesh";
 
         const sunLight = new THREE.PointLight(0xffffff, 80000000, 0, 1.5); //Less than square decay for now, since the distances are big
         this.sun.add(sunLight);

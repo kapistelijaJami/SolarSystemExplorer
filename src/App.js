@@ -18,6 +18,7 @@ export default class App {
         window.addEventListener('pointerup', this.onPointerUp);
         window.addEventListener('keydown', this.onKeyDown);
 
+        this.downloadSolarSystemData();
 
         this.scene = new THREE.Scene();
 
@@ -25,7 +26,8 @@ export default class App {
         this.scene.add(ambientLight);
 
         //EARTH
-        this.earth = new Earth(6371, 23.4, 0.144); //Quite fast rotation: 0.144, actual speed: 2 * Math.PI / 86164.09 (once in a sidereal day)
+        const realRotationSpeed = 2 * Math.PI / 86164.09; //once in a sidereal day
+        this.earth = new Earth(6371, 23.44, realRotationSpeed * 2000); //2000 times real speed for now
         this.earth.setPosition(150000000, 0, 0);
         this.scene.add(this.earth.getObject3D());
 
@@ -71,6 +73,7 @@ export default class App {
         this.lastTime = time;
 
         this.earth.update(delta);
+        this.earth.sunDirectionUniform.copy(this.sun.getObject3D().position).sub(this.earth.getObject3D().position).normalize();
         this.starField.setPositionVec(this.camera.getPosition());
 
         this.count += delta;
@@ -99,17 +102,16 @@ export default class App {
 
     onPointerDown(e) {
         if (e.button == 0) {
-            this.clickStartLoc = { x: e.clientX, y: e.clientY };
+            this.leftClickStartLoc = { x: e.clientX, y: e.clientY };
         } else if (e.button == 2) {
-            this.earth.setSelected(false);
-            this.resetCameraUp();
+            this.rightClickStartLoc = { x: e.clientX, y: e.clientY };
         }
     }
 
     onPointerUp(e) {
         if (e.button == 0) {
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (distance2D(this.clickStartLoc, currentLoc) <= 5) {
+            if (distance2D(this.leftClickStartLoc, currentLoc) <= 5) {
                 const mouse = {};
                 //From -1 to 1
                 mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
@@ -118,18 +120,30 @@ export default class App {
                 this.raycaster.setFromCamera(mouse, this.camera.getObject3D());
 
                 let intersects = this.raycaster.intersectObjects(this.scene.children, true);
-                intersects = intersects.filter((o) => o.object.name === "EarthMesh");
+                //intersects = intersects.filter((o) => o.object.name === "EarthMesh");
 
-                if (intersects.length > 0) {
-                    const intersection = intersects[0];
-                    console.log("Intersection with earth:", intersection);
+                for (let intersection of intersects) {
+                    switch (intersection.object.name) {
+                        case "EarthMesh":
+                            console.log("Intersection with earth:", intersection);
 
-                    this.earth.setSelected(true);
-                    this.setCameraUpToEarthUp();
-                } else {
+                            this.earth.setSelected(true);
+                            this.setCameraUpToEarthUp();
+                            return;
+                        case "SunMesh":
+                            console.log("Intersection with sun:", intersection);
+                            return;
+                    }
+
                     this.earth.setSelected(false);
                     this.resetCameraUp();
                 }
+            }
+        } else if (e.button == 2) {
+            const currentLoc = { x: e.clientX, y: e.clientY };
+            if (distance2D(this.rightClickStartLoc, currentLoc) <= 10) {
+                this.earth.setSelected(false);
+                this.resetCameraUp();
             }
         }
     }
@@ -166,5 +180,27 @@ export default class App {
 
         //Fix touch-action for mobile (OrbitControls turns this to 'auto' when I dispose of the old one, and it breaks the controls)
         this.renderer.domElement.style.touchAction = 'none';
+    }
+
+    async downloadSolarSystemData() {
+        this.ephemeris = {};
+        this.ephemeris.done = false;
+
+        const earthEphemerisPromise = fetch('ephemeris/Earth_ephemeris_1990-01-01_2040-12-31.json');
+        const earthOrientationPromise = fetch('ephemeris/Earth_orientation_1990-01-01_2040-12-31.json');
+        const sunEphemerisPromise = fetch('ephemeris/Sun_ephemeris_1990-01-01_2040-12-31.json');
+
+        const [earthEphemeris, earthOrientation, sunEphemeris] = await Promise.all([earthEphemerisPromise, earthOrientationPromise, sunEphemerisPromise]);
+
+        this.ephemeris.earth = {
+            data: earthEphemeris,
+            orientation: earthOrientation
+        };
+
+        this.ephemeris.sun = {
+            data: sunEphemeris
+        };
+
+        this.ephemeris.done = true;
     }
 }

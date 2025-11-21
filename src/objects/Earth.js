@@ -48,22 +48,14 @@ export default class Earth {
         this.longLines.visible = false;
 
 
-        this.clouds.renderOrder = 0; //Render clouds first
-        this.longLines.renderOrder = 1;
+        //Helps when both are transparent
+        /*this.clouds.renderOrder = 0; //Render clouds first
+        this.longLines.renderOrder = 1;*/
 
 
         //ATMOSPHERE (make better first)
-        /*const atmosphereGeo = new THREE.SphereGeometry(kilometersToGameUnit(6371 + 50), 128, 128);
-        const atmosphereMat = new THREE.MeshBasicMaterial({
-            color: 0x00aaff,
-            side: THREE.BackSide, // render inside out for better edge fade
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            opacity: 0.2
-        });
-        const atmosphere = new THREE.Mesh(atmosphereGeo, atmosphereMat);
-        atmosphere.position.set(kilometersToGameUnit(150000000), kilometersToGameUnit(0), kilometersToGameUnit(0));
-        earth.add(atmosphere);*/
+        this.atmosphere = createAtmosphere(this, radiusKm);
+        this.earthMesh.add(this.atmosphere);
     }
 
     getPosition() {
@@ -238,4 +230,76 @@ function createLongitudeLines(radius = 1, latSegments = 64, count = 12, linewidt
     }
 
     return group;
+}
+
+function createAtmosphere(earth, radiusKm) {
+    const vertexShader = `
+    varying vec3 vNormal;
+    varying vec3 vPositionWorld;
+
+    void main() {
+        // Get the normal in World Space (not View Space)
+        // This helps us compare it to the Sun's fixed world position
+        vNormal = normalize(mat3(modelMatrix) * normal);
+
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vPositionWorld = worldPosition.xyz;
+
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }
+    `;
+
+    const fragmentShader = `
+    uniform vec3 sunDirection;
+    uniform vec3 atmosphereColor;
+    uniform float coef;
+    uniform float power;
+
+    varying vec3 vNormal;
+    varying vec3 vPositionWorld;
+
+    void main() {
+        vec3 viewDirection = normalize(cameraPosition - vPositionWorld);
+
+        // Calculate "Edge Proximity"
+        // Since we are using BackSide, the dot product is negative.
+        // dot = -1.0 (Center of planet / Surface)
+        // dot =  0.0 (Edge of atmosphere mesh)
+        float viewDot = dot(vNormal, viewDirection);
+
+        // Radial Falloff (The Simplification)
+        // We want alpha to be 1.0 at the center (-1.0) and 0.0 at the edge (0.0).
+        // So we simply flip the sign of viewDot.
+        // pow(..., 3.0) makes the falloff non-linear (so it fades out gracefully, not abruptly)
+        float atmosphereDensity = pow(-viewDot, power);
+
+        // Sun Mask (Day/Night)
+        float sunDot = dot(vNormal, sunDirection);
+        float sunIntensity = smoothstep(-0.4, 0.2, sunDot);
+
+        // Final Composition
+        // We rely on AdditiveBlending to handle the transparency naturally
+        gl_FragColor = vec4(atmosphereColor, clamp(atmosphereDensity * sunIntensity * coef, 0.0, 1.0));
+    }
+    `;
+
+    earth.sunDirectionUniform = new THREE.Vector3(-1, 0, 0); //Placeholder (updated in update())
+    const atmosphereGeometry = new THREE.SphereGeometry(kmToGameUnit(radiusKm + 250), 128, 128);
+
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        uniforms: {
+            sunDirection: { value: earth.sunDirectionUniform },
+            atmosphereColor: { value: new THREE.Color(0.3, 0.6, 1.0) },
+            coef: { value: 100.0 },
+            power: { value: 5.0 },
+        },
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
+        transparent: true,
+        depthWrite: false
+    });
+
+    return new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 }
