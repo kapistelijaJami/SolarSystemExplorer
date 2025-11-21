@@ -1,4 +1,5 @@
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { kmToGameUnit, kmToGameUnit3D } from '@/util/gameUtil';
 
 export default class Controls {
     constructor(camera, renderer, targetPos) {
@@ -12,6 +13,14 @@ export default class Controls {
 
     getTarget() {
         return this.controls.target;
+    }
+
+    setTarget(xKm, yKm, zKm) {
+        this.controls.target.position.set(kmToGameUnit(xKm), kmToGameUnit(yKm), kmToGameUnit(zKm));
+    }
+
+    setTargetVec(targetPos) {
+        this.controls.target.copy(kmToGameUnit3D(targetPos));
     }
 
     dispose() {

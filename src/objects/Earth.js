@@ -275,7 +275,7 @@ function createAtmosphere(earth, radiusKm) {
 
         // Sun Mask (Day/Night)
         float sunDot = dot(vNormal, sunDirection);
-        float sunIntensity = smoothstep(-0.4, 0.2, sunDot);
+        float sunIntensity = clamp(smoothstep(-0.4, 0.2, sunDot), 0.07, 1.0);
 
         // Final Composition
         // We rely on AdditiveBlending to handle the transparency naturally

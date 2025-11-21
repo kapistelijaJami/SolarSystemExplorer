@@ -12,8 +12,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../..");
 
-//downloadEphemeris();
-downloadOrientationData();
+const onlyPrintUrl = false;
+
+downloadEphemeris();
+//downloadOrientationData();
 
 async function downloadEphemeris() {
     const command = "10";
@@ -23,13 +25,26 @@ async function downloadEphemeris() {
     const center = "@0";
     const name = "Sun";
 
-    const data = await queryHorizons(command, start, end, timeStep, center);
-    if (data.error) {
+    const params = getEphemerisParams(command, start, end, timeStep, center);
+
+    const data = await queryHorizons(params);
+    if (onlyPrintUrl) {
+        return;
+    } else if (data.error) {
         console.log("error:", data.error);
         return;
     }
 
-    const result = parseData(data, command, name, timeStep, center, start, end);
+    const result = {
+        name: name,
+        command: command,
+        timeStep: timeStep,
+        center: center,
+        start: start,
+        end: end
+    };
+
+    result.data = parseData(data);
     const jsonString = JSON.stringify(result, null, 2);
 
     const filePath = path.join(projectRoot, "public", "ephemeris", `${name}_ephemeris_${start}_${end}.json`);
@@ -44,17 +59,31 @@ async function downloadOrientationData() {
     const command = `'g:0,90,0@${bodyId}'`;
     const start = "1990-01-01";
     const end = "2040-12-31";
-    const timeStep = "1 y";
-    const center = "399";
+    const timeStep = "1 month";
+    const center = "@399";
     const name = "Earth";
 
-    const data = await queryHorizons(command, start, end, timeStep, center, true);
-    if (data.error) {
+    const params = getEphemerisParams(command, start, end, timeStep, center);
+    params.set("VEC_TABLE", "1"); //Need only position data
+
+    const data = await queryHorizons(params);
+    if (onlyPrintUrl) {
+        return;
+    } else if (data.error) {
         console.log("error:", data.error);
         return;
     }
 
-    const result = parseData(data, command, name, timeStep, center, start, end, true);
+    const result = {
+        name: name,
+        command: command,
+        timeStep: timeStep,
+        center: center,
+        start: start,
+        end: end
+    };
+
+    result.data = parseData(data, true);
     const jsonString = JSON.stringify(result, null, 2);
 
     const filePath = path.join(projectRoot, "public", "ephemeris", `${name}_orientation_${start}_${end}.json`);
@@ -63,19 +92,15 @@ async function downloadOrientationData() {
     fs.writeFileSync(filePath, jsonString);
 }
 
-async function queryHorizons(command, start, end, step, center, getOrientationData = false) { //"@0" = Solar System Barycenter
+async function queryHorizons(params) { //"@0" = Solar System Barycenter
     const baseUrl = "https://ssd.jpl.nasa.gov/api/horizons.api";
-
-    let params;
-    if (getOrientationData) {
-        params = getOrientationParams(command, start, end, step, center);
-    } else {
-        params = getEphemerisParams(command, start, end, step, center);
-    }
 
     try {
         const url = `${baseUrl}?${params}`;
         console.log("Sending request to", url);
+        if (onlyPrintUrl) {
+            return;
+        }
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -92,9 +117,6 @@ async function queryHorizons(command, start, end, step, center, getOrientationDa
 
 //Command is only the bodyId
 function getEphemerisParams(command, start, end, step, center) {
-    // Wrap step value in quotes for the API
-    const formattedStep = `'${step}'`;
-
     const params = new URLSearchParams({
         format: "text",
         COMMAND: command,
@@ -104,7 +126,7 @@ function getEphemerisParams(command, start, end, step, center) {
         CENTER: center,
         START_TIME: start, //Many formats, but using this: '2028-05-04 18:00' (probably leaving time out too)
         STOP_TIME: end,
-        STEP_SIZE: formattedStep,
+        STEP_SIZE: `'${step}'`, //Wrap step value in quotes for the API
         OUT_UNITS: "KM-S",
         REF_PLANE: "ECLIPTIC",
         REF_SYSTEM: "ICRF",
@@ -117,46 +139,12 @@ function getEphemerisParams(command, start, end, step, center) {
     return params;
 }
 
-function getOrientationParams(command, start, end, step, center) {
-    // Wrap step value in quotes for the API
-    const formattedStep = `'${step}'`;
+function parseData(dataText, orientationData = false) {
+    const lines = dataText.split("\n");
 
-    const params = new URLSearchParams({
-        format: "text",
-        COMMAND: command,
-        OBJ_DATA: "NO",
-        MAKE_EPHEM: "YES",
-        EPHEM_TYPE: "VECTORS",
-        CENTER: center,
-        START_TIME: start, //Many formats, but using this: '2028-05-04 18:00' (probably leaving time out too)
-        STOP_TIME: end,
-        STEP_SIZE: formattedStep,
-        OUT_UNITS: "KM-S",
-        REF_PLANE: "ECLIPTIC",
-        REF_SYSTEM: "ICRF",
-        VEC_CORR: "NONE",
-        VEC_DELTA_T: "YES", //With this can do TDB = UTC + deltaT (should be accurate within a second)
-        VEC_TABLE: "1",
-        CSV_FORMAT: "YES",
-        TIME_TYPE: "TDB" //Going with Barycentric Dynamical Time for now, should be the most accurate. Might need to convert UTC from client to TDB and use that for positions.
-    });
-    return params;
-}
+    const data = [];
 
-function parseData(data, command, name, timeStep, center, start, end, orientationData = false) {
-    const lines = data.split("\n");
     let inData = false;
-
-    const result = {
-        name: name,
-        command: command,
-        timeStep: timeStep,
-        center: center,
-        start: start,
-        end: end,
-        data: []
-    };
-
     for (let line of lines) {
         if (line.includes("$$SOE")) {
             inData = true;
@@ -166,7 +154,7 @@ function parseData(data, command, name, timeStep, center, start, end, orientatio
         }
 
         if (inData && line) {
-            const parts = line.split(",").map((part) => part.trim());
+            const parts = line.split(",").map(part => part.trim());
             if (!orientationData) {
                 const obj = {
                     jdTDB: Number(parts[0]),
@@ -178,7 +166,7 @@ function parseData(data, command, name, timeStep, center, start, end, orientatio
                     vy: Number(parts[7]),
                     vz: Number(parts[8])
                 };
-                result.data.push(obj);
+                data.push(obj);
             } else {
                 const obj = {
                     jdTDB: Number(parts[0]),
@@ -187,10 +175,10 @@ function parseData(data, command, name, timeStep, center, start, end, orientatio
                     y: Number(parts[4]),
                     z: Number(parts[5])
                 };
-                result.data.push(obj);
+                data.push(obj);
             }
         }
     }
 
-    return result;
+    return data;
 }

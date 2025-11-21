@@ -5,7 +5,8 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance2D } from "@/util/mathUtil";
+import { distance2D, hermiteInterpolationVec } from "@/util/mathUtil";
+import { utcToJulianDate, jdUtcToJdTDB } from "@/util/timeUtil";
 
 export default class App {
 
@@ -51,11 +52,13 @@ export default class App {
         this.scene.add(this.sun.getObject3D());
 
         //CONTROLS
-        this.controls = new Controls(this.camera, this.renderer, this.earth.getPositionGameUnit());
+        this.controls = new Controls(this.camera, this.renderer, this.earth.getPositionGameUnit()); //TODO: move controls to camera
+
+        this.playbackSpeed = 2000;
     }
 
     start() {
-        this.lastTime = 0;
+        this.setTime(Date.now());
         this.count = 0;
         this.animate = this.animate.bind(this); //Creates a new function with 'this' binded to App
         this.renderer.setAnimationLoop(this.animate);
@@ -68,13 +71,35 @@ export default class App {
         });
     }
 
-    animate(time) { //Time keeps increasing (ms)
-        const delta = (time - this.lastTime) / 1000;
-        this.lastTime = time;
+    animate() {
+        //Using fixed start time to calculate sim time so it doesn't drift from real time
+        const realElapsedMs = performance.now() - this.realStartTimeMs; //How much real time since last time skip
+
+        let delta = realElapsedMs - this.lastRealElapsedMs;
+        this.lastRealElapsedMs = realElapsedMs;
+        delta /= 1000;
+
+        this.simTimeMs = this.simStartTimeMs + realElapsedMs * this.playbackSpeed;
 
         this.earth.update(delta);
         this.earth.sunDirectionUniform.copy(this.sun.getObject3D().position).sub(this.earth.getObject3D().position).normalize();
         this.starField.setPositionVec(this.camera.getPosition());
+
+        if (this.ephemeris.done) {
+            const jdUTC = utcToJulianDate(new Date(this.simTimeMs));
+            const bracket = findEphemerisBracket(jdUTC, this.ephemeris.earth.ephemeris.data);
+            const interpolated = hermiteInterpolationVec(bracket);
+
+            const cameraOffset = this.camera.getPosition().clone().sub(this.earth.getPosition());
+
+            this.earth.setPositionVec(interpolated[0]);
+
+            this.camera.setPositionVec(this.earth.getPosition().clone().add(cameraOffset));
+            this.controls.setTargetVec(this.earth.getPosition());
+
+            //this.setCameraUpToEarthUp(); //TODO: Needs to set camera up when time skipping, but can't do it in a loop, since it resets controls and drag.
+        }
+
 
         this.count += delta;
         if (this.count >= 1) { //Updates every second
@@ -84,6 +109,13 @@ export default class App {
         this.controls.update();
 
         this.bloomComposer.render();
+    }
+
+    setTime(timeMs) {
+        this.realStartTimeMs = performance.now(); //This is just counting up ms from the program launch, accurate for delta
+        this.simStartTimeMs = timeMs; //This is actual datetime ms
+        this.simTimeMs = timeMs;
+        this.lastRealElapsedMs = 0;
     }
 
     darkenNonBloomed(obj) {
@@ -103,6 +135,8 @@ export default class App {
     onPointerDown(e) {
         if (e.button == 0) {
             this.leftClickStartLoc = { x: e.clientX, y: e.clientY };
+            this.leftClickPossible = true; //Only accept it as a click, if release happens within half a second
+            this.leftClickTimeout = window.setTimeout(() => { this.leftClickPossible = false; }, 500);
         } else if (e.button == 2) {
             this.rightClickStartLoc = { x: e.clientX, y: e.clientY };
         }
@@ -110,8 +144,9 @@ export default class App {
 
     onPointerUp(e) {
         if (e.button == 0) {
+            window.clearTimeout(this.leftClickTimeout);
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (distance2D(this.leftClickStartLoc, currentLoc) <= 5) {
+            if (this.leftClickPossible && distance2D(this.leftClickStartLoc, currentLoc) <= 5) {
                 const mouse = {};
                 //From -1 to 1
                 mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
@@ -190,17 +225,83 @@ export default class App {
         const earthOrientationPromise = fetch('ephemeris/Earth_orientation_1990-01-01_2040-12-31.json');
         const sunEphemerisPromise = fetch('ephemeris/Sun_ephemeris_1990-01-01_2040-12-31.json');
 
-        const [earthEphemeris, earthOrientation, sunEphemeris] = await Promise.all([earthEphemerisPromise, earthOrientationPromise, sunEphemerisPromise]);
+        const [earthEphemerisRes, earthOrientationRes, sunEphemerisRes] = await Promise.all([earthEphemerisPromise, earthOrientationPromise, sunEphemerisPromise]);
+        const [earthEphemeris, earthOrientation, sunEphemeris] = await Promise.all([earthEphemerisRes.json(), earthOrientationRes.json(), sunEphemerisRes.json()]);
 
         this.ephemeris.earth = {
-            data: earthEphemeris,
+            ephemeris: earthEphemeris,
             orientation: earthOrientation
         };
 
         this.ephemeris.sun = {
-            data: sunEphemeris
+            ephemeris: sunEphemeris
         };
 
         this.ephemeris.done = true;
     }
+}
+
+function findEphemerisBracket(jdUTC, data) {
+    const jdTDBApprox = jdUtcToJdTDB(jdUTC, data[0].deltaT);
+
+    let low = 0;
+    let high = data.length - 1;
+
+    //If outside the data, give the extreme points
+    if (jdTDBApprox <= data[0].jdTDB) {
+        const start = data[low];
+        const end = data[low];
+        const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+
+        return [
+            jdTDB,
+            start.jdTDB,
+            end.jdTDB,
+            new THREE.Vector3(start.x, start.z, -start.y),      //pos start
+            new THREE.Vector3(end.x, end.z, -end.y),            //pos end
+            new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
+            new THREE.Vector3(end.vx, end.vz, -end.vy)          //vel end
+        ];
+    } else if (jdTDBApprox >= data[high].jdTDB) {
+        const start = data[high];
+        const end = data[high];
+        const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+
+        return [
+            jdTDB,
+            start.jdTDB,
+            end.jdTDB,
+            new THREE.Vector3(start.x, start.z, -start.y),      //pos start
+            new THREE.Vector3(end.x, end.z, -end.y),            //pos end
+            new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
+            new THREE.Vector3(end.vx, end.vz, -end.vy),         //vel end
+            true
+        ];
+    }
+
+    //Binary search
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (data[mid].jdTDB < jdTDBApprox) { //Too low
+            low = mid + 1;
+        } else { //Too high
+            high = mid - 1;
+        }
+    }
+
+    //Low is higher than high, we have a result
+    const start = data[high];
+    const end = data[low];
+    const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+
+    //Swap y and z (needs to negate resulting z)
+    return [
+        jdTDB,
+        start.jdTDB,
+        end.jdTDB,
+        new THREE.Vector3(start.x, start.z, -start.y),      //pos start
+        new THREE.Vector3(end.x, end.z, -end.y),            //pos end
+        new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
+        new THREE.Vector3(end.vx, end.vz, -end.vy)          //vel end
+    ];
 }
