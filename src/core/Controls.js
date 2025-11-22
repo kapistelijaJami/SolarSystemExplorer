@@ -9,6 +9,14 @@ export default class Controls {
         this.controls.rotateSpeed = 0.5;
         this.controls.enablePan = false; //Panning off for now
         this.controls.target.copy(targetPos);
+
+        this.userIsControlling = false;
+        this.controls.addEventListener('start', () => {
+            this.userIsControlling = true;
+        });
+        this.controls.addEventListener('end', () => {
+            this.userIsControlling = false;
+        });
     }
 
     getTarget() {
@@ -23,11 +31,19 @@ export default class Controls {
         this.controls.target.copy(kmToGameUnit3D(targetPos));
     }
 
+    isUserControlling() {
+        return this.userIsControlling;
+    }
+
     dispose() {
         this.controls.dispose();
     }
 
     update() {
         this.controls.update();
+    }
+
+    getObject3D() {
+        return this.controls;
     }
 }

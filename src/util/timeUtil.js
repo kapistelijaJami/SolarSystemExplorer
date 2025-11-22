@@ -1,3 +1,5 @@
+import { PLAYBACK_SLIDER_SPEED_MIN, PLAYBACK_SLIDER_SPEED_MAX } from "@/constants";
+
 //Get the t-value for interpolation between two timestamps start and end.
 export function normalizeTime(time, start, end) {
     return (time - start) / (end - start);
@@ -14,4 +16,21 @@ export function jdUtcToJdTDB(jdUTC, deltaT) { //deltaT is VEC_DELTA_T in ephemer
 
 export function utcToJdTDB(date, deltaT) {
     return jdUtcToJdTDB(utcToJulianDate(date), deltaT);
+}
+
+export function sliderValueToRealSpeed(sliderValue) {
+    return PLAYBACK_SLIDER_SPEED_MIN * Math.pow(PLAYBACK_SLIDER_SPEED_MAX / PLAYBACK_SLIDER_SPEED_MIN, sliderValue / 100);
+}
+
+export function playbackSpeedToSliderValue(playbackSpeed) {
+    return Math.log(playbackSpeed / PLAYBACK_SLIDER_SPEED_MIN) / Math.log(PLAYBACK_SLIDER_SPEED_MAX / PLAYBACK_SLIDER_SPEED_MIN) * 100;
+}
+
+export function roundPlaybackSpeed(playbackSpeed) {
+    if (playbackSpeed > 10) {
+        playbackSpeed = Math.round(playbackSpeed);
+    } else {
+        playbackSpeed = Math.round(playbackSpeed * 10) / 10; //Rounding to nearest 10th
+    }
+    return playbackSpeed;
 }

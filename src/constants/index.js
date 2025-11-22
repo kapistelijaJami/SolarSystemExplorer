@@ -1,1 +1,7 @@
 export const UNIT_SCALING_FACTOR = 1000;
+
+//UI
+export const PLAYBACK_SLIDER_SPEED_MIN = 1;
+export const PLAYBACK_SLIDER_SPEED_MAX = 500000;
+export const PLAYBACK_SLIDER_VALUE_MIN = 0;
+export const PLAYBACK_SLIDER_VALUE_MAX = 100;

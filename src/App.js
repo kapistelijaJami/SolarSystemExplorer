@@ -6,7 +6,9 @@ import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
 import { distance2D, hermiteInterpolationVec } from "@/util/mathUtil";
-import { utcToJulianDate, jdUtcToJdTDB } from "@/util/timeUtil";
+import { utcToJulianDate, jdUtcToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed } from "@/util/timeUtil";
+import { PLAYBACK_SLIDER_VALUE_MIN, PLAYBACK_SLIDER_VALUE_MAX } from "@/constants";
+import { getObject3DUpWorld } from "@/util/gameUtil";
 
 export default class App {
 
@@ -28,7 +30,7 @@ export default class App {
 
         //EARTH
         const realRotationSpeed = 2 * Math.PI / 86164.09; //once in a sidereal day
-        this.earth = new Earth(6371, 23.44, realRotationSpeed * 2000); //2000 times real speed for now
+        this.earth = new Earth(6371, 23.44, realRotationSpeed);
         this.earth.setPosition(150000000, 0, 0);
         this.scene.add(this.earth.getObject3D());
 
@@ -54,7 +56,12 @@ export default class App {
         //CONTROLS
         this.controls = new Controls(this.camera, this.renderer, this.earth.getPositionGameUnit()); //TODO: move controls to camera
 
-        this.playbackSpeed = 2000;
+
+        //UI CONTROLS
+        this.setupUIButtons();
+
+        this.setPlaybackSpeed(2000);
+        this.paused = false;
     }
 
     start() {
@@ -73,20 +80,25 @@ export default class App {
 
     animate() {
         //Using fixed start time to calculate sim time so it doesn't drift from real time
-        const realElapsedMs = performance.now() - this.realStartTimeMs; //How much real time since last time skip
+        const now = performance.now();
+        const realDeltaMs = now - this.lastRealTimeMs;
+        this.lastRealTimeMs = now;
 
-        let delta = realElapsedMs - this.lastRealElapsedMs;
-        this.lastRealElapsedMs = realElapsedMs;
-        delta /= 1000;
+        let delta = realDeltaMs / 1000;
 
-        this.simTimeMs = this.simStartTimeMs + realElapsedMs * this.playbackSpeed;
+        if (!this.paused) {
+            this.simTimeMs += realDeltaMs * this.playbackSpeed;
+        }
+        const simTimeDate = new Date(this.simTimeMs);
 
-        this.earth.update(delta);
-        this.earth.sunDirectionUniform.copy(this.sun.getObject3D().position).sub(this.earth.getObject3D().position).normalize();
+        document.getElementById("currentSimTime").innerText = simTimeDate.toISOString().replace("T", " ").replace(/\.\d{3}Z/, ' Z');
+
+        this.earth.update(delta, this);
+        this.earth.sunDirectionUniform.copy(this.sun.getObject3D().position.sub(this.earth.getObject3D().position).normalize());
         this.starField.setPositionVec(this.camera.getPosition());
 
         if (this.ephemeris.done) {
-            const jdUTC = utcToJulianDate(new Date(this.simTimeMs));
+            const jdUTC = utcToJulianDate(simTimeDate);
             const bracket = findEphemerisBracket(jdUTC, this.ephemeris.earth.ephemeris.data);
             const interpolated = hermiteInterpolationVec(bracket);
 
@@ -97,12 +109,18 @@ export default class App {
             this.camera.setPositionVec(this.earth.getPosition().clone().add(cameraOffset));
             this.controls.setTargetVec(this.earth.getPosition());
 
-            //this.setCameraUpToEarthUp(); //TODO: Needs to set camera up when time skipping, but can't do it in a loop, since it resets controls and drag.
+            if (this.timeSkip && this.earth.selected) {
+                this.timeSkip = false;
+                this.setCameraUpToEarthUp();
+            }
         }
 
 
         this.count += delta;
         if (this.count >= 1) { //Updates every second
+            if (!this.controls.isUserControlling() && this.earth.selected) {
+                this.setCameraUpToEarthUp(); //Updates the camera up when user isn't controlling the camera, since it drifts very slowly
+            }
             this.count = 0;
         }
 
@@ -111,11 +129,25 @@ export default class App {
         this.bloomComposer.render();
     }
 
+    getPlaybackSpeed() {
+        return this.paused ? 0 : this.playbackSpeed;
+    }
+
+    getRealPlaybackSpeed() {
+        return this.playbackSpeed;
+    }
+
     setTime(timeMs) {
-        this.realStartTimeMs = performance.now(); //This is just counting up ms from the program launch, accurate for delta
-        this.simStartTimeMs = timeMs; //This is actual datetime ms
-        this.simTimeMs = timeMs;
-        this.lastRealElapsedMs = 0;
+        this.lastRealTimeMs = performance.now(); //This is just counting up ms from the program launch, accurate for delta
+        this.simTimeMs = timeMs; //This is actual datetime ms
+        this.timeSkip = true;
+    }
+
+    setPlaybackSpeed(speed) {
+        this.playbackSpeed = roundPlaybackSpeed(speed);
+        const speedSlider = document.getElementById("playbackSpeed");
+        speedSlider.value = playbackSpeedToSliderValue(this.playbackSpeed);
+        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x";
     }
 
     darkenNonBloomed(obj) {
@@ -184,18 +216,33 @@ export default class App {
     }
 
     onKeyDown(e) {
+        console.log("Key code:", `"${e.code}"`, e);
+
+        //Allow repeat:
+        if (e.code === 'ArrowLeft') {
+            const slider = document.getElementById("playbackSpeed");
+            const newValue = Math.max(PLAYBACK_SLIDER_VALUE_MIN, parseInt(slider.value) - 1);
+            this.setPlaybackSpeed(sliderValueToRealSpeed(newValue));
+        } else if (e.code === 'ArrowRight') {
+            const slider = document.getElementById("playbackSpeed");
+            const newValue = Math.min(PLAYBACK_SLIDER_VALUE_MAX, parseInt(slider.value) + 1);
+            this.setPlaybackSpeed(sliderValueToRealSpeed(newValue));
+        }
+
         if (e.repeat) {
             return;
         }
+
+        //Don't allow repeat:
         if (e.code === 'KeyW') {
-            console.log(e);
+            //TODO: add movement
+        } else if (e.code === 'Space') {
+            this.togglePause();
         }
     }
 
     setCameraUpToEarthUp() {
-        const localUp = new THREE.Vector3(0, 1, 0);
-        const quat = this.earth.axialTilt.getWorldQuaternion(new THREE.Quaternion());
-        const earthUpWorld = localUp.applyQuaternion(quat);
+        const earthUpWorld = getObject3DUpWorld(this.earth.axialTilt);
         this.camera.setUpVector(earthUpWorld); //Rotate camera up to match earth up
 
         //Must create new OrbitControls, since camera up is baked in on its creation
@@ -239,6 +286,40 @@ export default class App {
 
         this.ephemeris.done = true;
     }
+
+    setupUIButtons() {
+        const speedSlider = document.getElementById("playbackSpeed");
+        speedSlider.value = this.playbackSpeed;
+        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x";
+
+        speedSlider.addEventListener("input", (e) => {
+            this.setPlaybackSpeed(sliderValueToRealSpeed(speedSlider.value));
+        });
+
+        const playToggleBtn = document.getElementById("playToggle");
+        this.togglePause = this.togglePause.bind(this);
+        playToggleBtn.addEventListener("click", this.togglePause);
+
+        document.getElementById("realTime").addEventListener("click", () => {
+            this.setPaused(false);
+            this.setPlaybackSpeed(1);
+            this.setTime(Date.now());
+        });
+    }
+
+    setPaused(bool) {
+        const playToggleBtn = document.getElementById("playToggle");
+        this.paused = bool;
+        if (this.paused) {
+            playToggleBtn.innerText = "Play";
+        } else {
+            playToggleBtn.innerText = "Pause";
+        }
+    }
+
+    togglePause() {
+        this.setPaused(!this.paused);
+    }
 }
 
 function findEphemerisBracket(jdUTC, data) {
@@ -251,32 +332,11 @@ function findEphemerisBracket(jdUTC, data) {
     if (jdTDBApprox <= data[0].jdTDB) {
         const start = data[low];
         const end = data[low];
-        const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
-
-        return [
-            jdTDB,
-            start.jdTDB,
-            end.jdTDB,
-            new THREE.Vector3(start.x, start.z, -start.y),      //pos start
-            new THREE.Vector3(end.x, end.z, -end.y),            //pos end
-            new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
-            new THREE.Vector3(end.vx, end.vz, -end.vy)          //vel end
-        ];
+        return createEphemerisArray(jdUTC, start, end);
     } else if (jdTDBApprox >= data[high].jdTDB) {
         const start = data[high];
         const end = data[high];
-        const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
-
-        return [
-            jdTDB,
-            start.jdTDB,
-            end.jdTDB,
-            new THREE.Vector3(start.x, start.z, -start.y),      //pos start
-            new THREE.Vector3(end.x, end.z, -end.y),            //pos end
-            new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
-            new THREE.Vector3(end.vx, end.vz, -end.vy),         //vel end
-            true
-        ];
+        return createEphemerisArray(jdUTC, start, end);
     }
 
     //Binary search
@@ -292,6 +352,10 @@ function findEphemerisBracket(jdUTC, data) {
     //Low is higher than high, we have a result
     const start = data[high];
     const end = data[low];
+    return createEphemerisArray(jdUTC, start, end);
+}
+
+function createEphemerisArray(jdUTC, start, end) {
     const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
 
     //Swap y and z (needs to negate resulting z)

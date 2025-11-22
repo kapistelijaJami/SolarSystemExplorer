@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { kmToGameUnit, gameUnitToKm3D, kmToGameUnit3D } from '@/util/gameUtil';
+import { kmToGameUnit, gameUnitToKm3D, kmToGameUnit3D, pointObject3DUpToVector } from '@/util/gameUtil';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
@@ -13,7 +13,7 @@ export default class Earth {
         this.rotationSpeed = rotationSpeed;
         this.cloudRotationSpeed = rotationSpeed * 0.08; //Adding to the earth rotation
         this.axialTilt = new THREE.Object3D();
-        this.axialTilt.rotation.z = -THREE.MathUtils.degToRad(axialTilt);
+        pointObject3DUpToVector(this.axialTilt, new THREE.Vector3(0.0028185262282861166, 0.9174740972578344, -0.3977855411786888)); //Just one orientation of the earth
         this.group.add(this.axialTilt);
 
         this.earthMesh = createEarthMesh(radiusKm)
@@ -26,18 +26,6 @@ export default class Earth {
         this.axes = new THREE.AxesHelper(kmToGameUnit(10000));
         this.earthMesh.add(this.axes);
 
-
-        //WIREFRAME (Do lat-long version)
-        /*const wireGeo = new THREE.SphereGeometry(kmToGameUnit(6371 + 38.5), 32, 32);
-        const wireMat = new THREE.MeshBasicMaterial({
-            color: 0x070707,
-            transparent: true,
-            opacity: 0.3,
-            wireframe: true
-        });
-
-        this.wireSphere = new THREE.Mesh(wireGeo, wireMat);*/
-        //this.earthMesh.add(this.wireSphere);
 
         this.latLines = createLatitudeLines(kmToGameUnit(6371 + 10), 128, 17, 0x070707);
         this.longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, kmToGameUnit(10), 0x070707);
@@ -74,9 +62,9 @@ export default class Earth {
         this.group.position.copy(kmToGameUnit3D(vectorKm));
     }
 
-    update(delta) {
-        this.earthMesh.rotation.y += this.rotationSpeed * delta;
-        this.clouds.rotation.y += this.cloudRotationSpeed * delta;
+    update(delta, app) {
+        this.earthMesh.rotation.y += this.rotationSpeed * delta * app.getPlaybackSpeed();
+        this.clouds.rotation.y += this.cloudRotationSpeed * delta * app.getPlaybackSpeed();
 
         if (this.selected) {
             this.latLines.visible = true;
@@ -232,7 +220,7 @@ function createLongitudeLines(radius = 1, latSegments = 64, count = 12, linewidt
     return group;
 }
 
-function createAtmosphere(earth, radiusKm) {
+function createAtmosphere(earth, radiusKm) { //TODO: This looks weird from far away (looks like it goes fully in front of the earth looking from specific angles)
     const vertexShader = `
     varying vec3 vNormal;
     varying vec3 vPositionWorld;
@@ -254,12 +242,17 @@ function createAtmosphere(earth, radiusKm) {
     uniform vec3 atmosphereColor;
     uniform float coef;
     uniform float power;
+    uniform float atmosphereCutoffDist;
 
     varying vec3 vNormal;
     varying vec3 vPositionWorld;
 
     void main() {
         vec3 viewDirection = normalize(cameraPosition - vPositionWorld);
+
+        float distance = length(cameraPosition - vPositionWorld);
+        //Smoothstep going down from 3/4 of atmosphereCutoffDist = 1.0 intensity, to atmosphereCutoffDist = 0.0 intensity
+        float distanceIntensity = smoothstep(atmosphereCutoffDist, 3.0/4.0 * atmosphereCutoffDist, distance);
 
         // Calculate "Edge Proximity"
         // Since we are using BackSide, the dot product is negative.
@@ -270,16 +263,16 @@ function createAtmosphere(earth, radiusKm) {
         // Radial Falloff (The Simplification)
         // We want alpha to be 1.0 at the center (-1.0) and 0.0 at the edge (0.0).
         // So we simply flip the sign of viewDot.
-        // pow(..., 3.0) makes the falloff non-linear (so it fades out gracefully, not abruptly)
+        // pow() makes the falloff non-linear (so it fades out gracefully, not abruptly)
         float atmosphereDensity = pow(-viewDot, power);
 
         // Sun Mask (Day/Night)
         float sunDot = dot(vNormal, sunDirection);
-        float sunIntensity = clamp(smoothstep(-0.4, 0.2, sunDot), 0.07, 1.0);
+        float sunIntensity = clamp(smoothstep(-0.4, 0.2, sunDot), 0.06, 1.0);
 
         // Final Composition
         // We rely on AdditiveBlending to handle the transparency naturally
-        gl_FragColor = vec4(atmosphereColor, clamp(atmosphereDensity * sunIntensity * coef, 0.0, 1.0));
+        gl_FragColor = vec4(atmosphereColor, clamp(atmosphereDensity * sunIntensity * coef * distanceIntensity, 0.0, 1.0));
     }
     `;
 
@@ -294,6 +287,7 @@ function createAtmosphere(earth, radiusKm) {
             atmosphereColor: { value: new THREE.Color(0.3, 0.6, 1.0) },
             coef: { value: 100.0 },
             power: { value: 5.0 },
+            atmosphereCutoffDist: { value: kmToGameUnit(200000) } //200000.0 seems to fix the problem for now
         },
         blending: THREE.AdditiveBlending,
         side: THREE.BackSide,
