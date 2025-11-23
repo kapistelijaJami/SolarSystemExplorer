@@ -10,11 +10,11 @@ export function distance3D(start, end) {
 }
 
 export function radiansToDegrees(radians) {
-    return radians * (180 / Math.PI);
+    return radians * 180 / Math.PI;
 };
 
 export function degreesToRadians(degrees) {
-    return degrees * (Math.PI / 180);
+    return degrees * Math.PI / 180;
 }
 
 export function hermiteInterpolationVec(params) {

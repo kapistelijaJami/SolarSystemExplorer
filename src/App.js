@@ -5,7 +5,7 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance2D, hermiteInterpolationVec, lerp, radiansToDegrees } from "@/util/mathUtil";
+import { distance2D, hermiteInterpolationVec, lerp, degreesToRadians } from "@/util/mathUtil";
 import { utcToJulianDate, jdUtcToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed, normalizeTime } from "@/util/timeUtil";
 import { PLAYBACK_SLIDER_VALUE_MIN, PLAYBACK_SLIDER_VALUE_MAX } from "@/constants";
 import { getObject3DUpWorld } from "@/util/gameUtil";
@@ -65,8 +65,8 @@ export default class App {
     }
 
     start() {
-        this.setTime(Date.now());
-        //this.setTime(new Date("2000-01-01T12:00:00Z").getTime());
+        //this.setTime(Date.now());
+        this.setTime(new Date("2000-01-01T12:00:00Z").getTime());
         this.count = 0;
         this.animate = this.animate.bind(this); //Creates a new function with 'this' binded to App
         this.renderer.setAnimationLoop(this.animate);
@@ -95,7 +95,6 @@ export default class App {
         document.getElementById("currentSimTime").innerText = simTimeDate.toISOString().replace("T", " ").replace(/\.\d{3}Z/, ' Z');
 
         this.earth.update(delta, this);
-        this.earth.sunDirectionUniform.copy(this.sun.getObject3D().position.sub(this.earth.getObject3D().position).normalize());
         this.starField.setPositionVec(this.camera.getPosition());
 
         if (this.ephemeris.done) {
@@ -107,7 +106,6 @@ export default class App {
             const interpolatedLoc = hermiteInterpolationVec(ephemeris);
 
             const cameraOffset = this.camera.getPosition().clone().sub(this.earth.getPosition());
-
             this.earth.setPositionVec(interpolatedLoc[0]);
 
             //TODO: Use pole orientation too
@@ -115,7 +113,9 @@ export default class App {
             const orientation = createOrientationArray(jdUTC, sOr, eOr);
             const normalizedTime = normalizeTime(orientation[0], orientation[1], orientation[2]);
             const interpolatedRot = lerp(orientation[3], orientation[4], normalizedTime);
-            this.earth.setRotationW(interpolatedRot + Math.PI / 2); //I think rotating extra 90 degrees makes it correct
+            this.earth.setRotationW(degreesToRadians(interpolatedRot) + Math.PI / 2); //I think rotating extra 90 degrees makes it correct
+            //TODO: create function to convert W to correct angle for prime meridian.
+            //console.log(interpolatedRot + 90);
 
             //const diff = orientation[4] - orientation[3];
             //console.log("DailyDifference:", diff, radiansToDegrees(diff), radiansToDegrees(interpolatedRot));
@@ -403,7 +403,7 @@ function createOrientationArray(jdUTC, start, end) {
         jdTDB,
         start.jdTDB,
         end.jdTDB,
-        start.w_rad,      //W start (rotation)
-        end.w_rad
+        start.w,      //W start (rotation)
+        end.w
     ];
 }

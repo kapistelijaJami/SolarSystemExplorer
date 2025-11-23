@@ -22,7 +22,7 @@ export function createBloomComposer(renderer, scene, camera) {
     const bloomParams = {
         strength: 50,     //intensity of bloom, def: 200
         radius: 1,        //glow radius
-        threshold: 1      //minimum brightness to bloom, def: 1
+        threshold: 5      //minimum brightness to bloom, def: 1
     };
     const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),

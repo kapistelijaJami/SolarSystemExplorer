@@ -40,13 +40,13 @@ def earth_W(et):
     #et - J2000 in days
     dt = (et - spice.str2et("2000 JAN 01 12:00:00 TDB")) / 86400.0 #dt in days from J2000
     
-    w_rad = (W0 + W_rate * dt) * math.pi / 180 #Return in radians for smaller numbers
-    print(dt, w_rad * 180 / math.pi)
-    return w_rad
+    w = (W0 + W_rate * dt)
+    #print(dt, w)
+    return w
 
 
-start = datetime(2000, 1, 1)
-days = 10 #def: 18627
+start = datetime(1990, 1, 1)
+days = 18627 #def: 18627
 
 print(datetime(2040, 12, 31) - datetime(1990, 1, 1))
 
@@ -66,21 +66,38 @@ result = {
     "data": []
 }
 
+testTime = datetime(2000, 1, 1) + timedelta(hours=12)
+etTest1 = spice.utc2et("2000-01-01T12:00:00")
+etTest2 = spice.str2et("2000 JAN 01 12:00:00 TDB") #2000 JAN 01 12:00:00 TDB works
+print(etTest1, etTest2, (etTest1 - etTest2))
+
+etTest3 = spice.tparse("2000-01-01T12:00:00")[0]
+print(etTest3, etTest2, etTest3 - etTest2)
+
+print("-" * 50)
+
+
 for i in range(days):
     t = start + timedelta(days=i)
-    et = spice.utc2et(t.strftime("%Y-%m-%dT%H:00:00"))
+    formatted = t.strftime("%Y-%m-%dT%H:%M:%S")
+    #Using spice.tparse instead of spice.utc2et, we can input a time, it expects utc time, and it outputs utc seconds,
+    #but we just continue by assuming they are et seconds, then we can work with TDB times the whole time.
+    et = spice.tparse(formatted)[0] #et is in seconds since J2000 TDB
+    utcSec = spice.utc2et(formatted)
+    deltaT = -(et - utcSec) #have to negate (or swap subtraction order), because of the previous assumption
 
     jdTDB = spice.unitim(et, 'ET', 'JDTDB')
     pole_vec, ra, dec = earth_ra_dec(et)
-    w_rad = earth_W(et)
+    w = earth_W(et)
 
     result["data"].append({
         "date": f"{t.date()} {t.time()}",
         "jdTDB": jdTDB,
+        "deltaT": deltaT,
         "pole_vec": pole_vec,
         "ra": ra,
         "dec": dec,
-        "w_rad": w_rad
+        "w": w
     })
 
     #print(f"{t.date()} {t.time()}   {et}   {ra:9.8f}   {dec:9.8f}   {w:9.8f}")

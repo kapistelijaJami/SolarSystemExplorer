@@ -26,6 +26,12 @@ export default class Earth {
         this.axes = new THREE.AxesHelper(kmToGameUnit(10000));
         this.earthMesh.add(this.axes);
 
+        this.axes2 = new THREE.AxesHelper(kmToGameUnit(20000));
+        this.group.add(this.axes2);
+
+        this.sunDirectionVector = new THREE.Vector3(-1, 0, 0); //Placeholder, updated in update()
+        this.sunDirectionLine = createSunDirectionLine();
+        this.group.add(this.sunDirectionLine);
 
         this.latLines = createLatitudeLines(kmToGameUnit(6371 + 10), 128, 17, 0x070707);
         this.longLines = createLongitudeLines(kmToGameUnit(6371 + 10), 128, 36, kmToGameUnit(10), 0x070707);
@@ -65,6 +71,11 @@ export default class Earth {
     update(delta, app) {
         /*this.earthMesh.rotation.y += this.rotationSpeed * delta * app.getPlaybackSpeed();*/
         this.clouds.rotation.y += this.cloudRotationSpeed * delta * app.getPlaybackSpeed();
+
+        this.sunDirectionVector.copy(app.sun.getObject3D().position.sub(this.group.position).normalize());
+        const lineEnd = this.sunDirectionVector.clone().multiplyScalar(kmToGameUnit(30000));
+        this.sunDirectionLine.geometry.attributes.position.setXYZ(1, lineEnd.x, lineEnd.y, lineEnd.z);
+        this.sunDirectionLine.geometry.attributes.position.needsUpdate = true;
 
         if (this.selected) {
             this.latLines.visible = true;
@@ -282,14 +293,13 @@ function createAtmosphere(earth, radiusKm) { //TODO: This looks weird from far a
     }
     `;
 
-    earth.sunDirectionUniform = new THREE.Vector3(-1, 0, 0); //Placeholder (updated in update())
     const atmosphereGeometry = new THREE.SphereGeometry(kmToGameUnit(radiusKm + 250), 128, 128);
 
     const atmosphereMaterial = new THREE.ShaderMaterial({
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
         uniforms: {
-            sunDirection: { value: earth.sunDirectionUniform },
+            sunDirection: { value: earth.sunDirectionVector },
             atmosphereColor: { value: new THREE.Color(0.3, 0.6, 1.0) },
             coef: { value: 100.0 },
             power: { value: 5.0 },
@@ -302,4 +312,15 @@ function createAtmosphere(earth, radiusKm) { //TODO: This looks weird from far a
     });
 
     return new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+}
+
+function createSunDirectionLine() {
+    const points = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, 0)
+    ];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+    return new THREE.Line(geometry, material);
 }
