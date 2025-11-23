@@ -7,7 +7,7 @@ export default class Controls {
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.1;
         this.controls.rotateSpeed = 0.5;
-        this.controls.enablePan = false; //Panning off for now
+        this.controls.enablePan = false; //Panning off for now //TODO: Maybe add back, needs to disable targeting when panning I guess
         this.controls.target.copy(targetPos);
 
         this.userIsControlling = false;
@@ -23,6 +23,7 @@ export default class Controls {
         return this.controls.target;
     }
 
+    //TODO: Should animate targeting, at least when first setting it
     setTarget(xKm, yKm, zKm) {
         this.controls.target.position.set(kmToGameUnit(xKm), kmToGameUnit(yKm), kmToGameUnit(zKm));
     }

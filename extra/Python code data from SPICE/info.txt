@@ -1,0 +1,11 @@
+https://sbn.psi.edu/pds/support/using-data/spice-intro.html
+
+The position of the planets and other natural bodies – SP-kernel (SPK)
+The orientation of the planets and other natural bodies – PC-kernel (PCK)
+The position of the spacecraft – SP-kernel (SPK)
+The orientation of the spacecraft and any articulating structures – C-kernel (CK)
+The geometric parameters of the instruments – Instrument-kernel (IK)
+The definitions of the instrument and spacecraft reference frames – Frames-kernel (FK)
+The correlation of the on-board time to UTC – Spacecraft Clock-kernel (SCLK)
+The leapseconds needed for conversion between UTC and Ephemeris Time – Leapsecond-kernel (LSK)
+The digital shape data for natural bodies – Digital Shape-kernel (DSK) or Planetary Constants Kernel (PCK)

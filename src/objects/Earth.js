@@ -63,7 +63,7 @@ export default class Earth {
     }
 
     update(delta, app) {
-        this.earthMesh.rotation.y += this.rotationSpeed * delta * app.getPlaybackSpeed();
+        /*this.earthMesh.rotation.y += this.rotationSpeed * delta * app.getPlaybackSpeed();*/
         this.clouds.rotation.y += this.cloudRotationSpeed * delta * app.getPlaybackSpeed();
 
         if (this.selected) {
@@ -75,6 +75,11 @@ export default class Earth {
             this.longLines.visible = false;
             this.axes.visible = false;
         }
+    }
+
+    //W is just rotation around UP axis
+    setRotationW(w_rad) {
+        this.earthMesh.rotation.y = w_rad;
     }
 
     setSelected(bool) {
@@ -106,6 +111,7 @@ function createEarthMesh(radiusKm) {
         //transparent: true,
         //opacity: 1
     });
+    //earthMaterial.normalScale = new THREE.Vector2(0.0, 0.0);
     return new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm), 128, 128), earthMaterial);
 }
 

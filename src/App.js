@@ -5,8 +5,8 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance2D, hermiteInterpolationVec } from "@/util/mathUtil";
-import { utcToJulianDate, jdUtcToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed } from "@/util/timeUtil";
+import { distance2D, hermiteInterpolationVec, lerp, radiansToDegrees } from "@/util/mathUtil";
+import { utcToJulianDate, jdUtcToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed, normalizeTime } from "@/util/timeUtil";
 import { PLAYBACK_SLIDER_VALUE_MIN, PLAYBACK_SLIDER_VALUE_MAX } from "@/constants";
 import { getObject3DUpWorld } from "@/util/gameUtil";
 
@@ -25,7 +25,7 @@ export default class App {
 
         this.scene = new THREE.Scene();
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.01); //default: 0.01
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.02); //default: 0.01
         this.scene.add(ambientLight);
 
         //EARTH
@@ -60,12 +60,13 @@ export default class App {
         //UI CONTROLS
         this.setupUIButtons();
 
-        this.setPlaybackSpeed(2000);
+        this.setPlaybackSpeed(1);
         this.paused = false;
     }
 
     start() {
         this.setTime(Date.now());
+        //this.setTime(new Date("2000-01-01T12:00:00Z").getTime());
         this.count = 0;
         this.animate = this.animate.bind(this); //Creates a new function with 'this' binded to App
         this.renderer.setAnimationLoop(this.animate);
@@ -99,12 +100,25 @@ export default class App {
 
         if (this.ephemeris.done) {
             const jdUTC = utcToJulianDate(simTimeDate);
-            const bracket = findEphemerisBracket(jdUTC, this.ephemeris.earth.ephemeris.data);
-            const interpolated = hermiteInterpolationVec(bracket);
+
+            //Earth
+            const [sEph, eEph] = findEphemerisBracket(jdUTC, this.ephemeris.earth.ephemeris.data);
+            const ephemeris = createEphemerisArray(jdUTC, sEph, eEph);
+            const interpolatedLoc = hermiteInterpolationVec(ephemeris);
 
             const cameraOffset = this.camera.getPosition().clone().sub(this.earth.getPosition());
 
-            this.earth.setPositionVec(interpolated[0]);
+            this.earth.setPositionVec(interpolatedLoc[0]);
+
+            //TODO: Use pole orientation too
+            const [sOr, eOr] = findEphemerisBracket(jdUTC, this.ephemeris.earth.orientation.data);
+            const orientation = createOrientationArray(jdUTC, sOr, eOr);
+            const normalizedTime = normalizeTime(orientation[0], orientation[1], orientation[2]);
+            const interpolatedRot = lerp(orientation[3], orientation[4], normalizedTime);
+            this.earth.setRotationW(interpolatedRot + Math.PI / 2); //I think rotating extra 90 degrees makes it correct
+
+            //const diff = orientation[4] - orientation[3];
+            //console.log("DailyDifference:", diff, radiansToDegrees(diff), radiansToDegrees(interpolatedRot));
 
             this.camera.setPositionVec(this.earth.getPosition().clone().add(cameraOffset));
             this.controls.setTargetVec(this.earth.getPosition());
@@ -178,7 +192,7 @@ export default class App {
         if (e.button == 0) {
             window.clearTimeout(this.leftClickTimeout);
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (this.leftClickPossible && distance2D(this.leftClickStartLoc, currentLoc) <= 5) {
+            if (this.leftClickPossible && distance2D(this.leftClickStartLoc, currentLoc) <= 10) {
                 const mouse = {};
                 //From -1 to 1
                 mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
@@ -187,7 +201,6 @@ export default class App {
                 this.raycaster.setFromCamera(mouse, this.camera.getObject3D());
 
                 let intersects = this.raycaster.intersectObjects(this.scene.children, true);
-                //intersects = intersects.filter((o) => o.object.name === "EarthMesh");
 
                 for (let intersection of intersects) {
                     switch (intersection.object.name) {
@@ -269,7 +282,8 @@ export default class App {
         this.ephemeris.done = false;
 
         const earthEphemerisPromise = fetch('ephemeris/Earth_ephemeris_1990-01-01_2040-12-31.json');
-        const earthOrientationPromise = fetch('ephemeris/Earth_orientation_1990-01-01_2040-12-31.json');
+        //const earthOrientationPromise = fetch('ephemeris/Earth_orientation_1990-01-01_2040-12-31.json');
+        const earthOrientationPromise = fetch('ephemeris/Earth_SPICE_orientation_1990-01-01_2040-12-31.json');
         const sunEphemerisPromise = fetch('ephemeris/Sun_ephemeris_1990-01-01_2040-12-31.json');
 
         const [earthEphemerisRes, earthOrientationRes, sunEphemerisRes] = await Promise.all([earthEphemerisPromise, earthOrientationPromise, sunEphemerisPromise]);
@@ -322,8 +336,13 @@ export default class App {
     }
 }
 
+//TODO: Add end of data error
 function findEphemerisBracket(jdUTC, data) {
-    const jdTDBApprox = jdUtcToJdTDB(jdUTC, data[0].deltaT);
+    let jdTDBApprox = jdUTC;
+
+    if (data[0].deltaT) {
+        jdTDBApprox = jdUtcToJdTDB(jdUTC, data[0].deltaT);
+    }
 
     let low = 0;
     let high = data.length - 1;
@@ -332,11 +351,11 @@ function findEphemerisBracket(jdUTC, data) {
     if (jdTDBApprox <= data[0].jdTDB) {
         const start = data[low];
         const end = data[low];
-        return createEphemerisArray(jdUTC, start, end);
+        return [start, end];
     } else if (jdTDBApprox >= data[high].jdTDB) {
         const start = data[high];
         const end = data[high];
-        return createEphemerisArray(jdUTC, start, end);
+        return [start, end];
     }
 
     //Binary search
@@ -352,11 +371,14 @@ function findEphemerisBracket(jdUTC, data) {
     //Low is higher than high, we have a result
     const start = data[high];
     const end = data[low];
-    return createEphemerisArray(jdUTC, start, end);
+    return [start, end];
 }
 
 function createEphemerisArray(jdUTC, start, end) {
-    const jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+    let jdTDB = jdUTC;
+    if (start.deltaT) {
+        jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+    }
 
     //Swap y and z (needs to negate resulting z)
     return [
@@ -367,5 +389,21 @@ function createEphemerisArray(jdUTC, start, end) {
         new THREE.Vector3(end.x, end.z, -end.y),            //pos end
         new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
         new THREE.Vector3(end.vx, end.vz, -end.vy)          //vel end
+    ];
+}
+
+function createOrientationArray(jdUTC, start, end) {
+    let jdTDB = jdUTC;
+    if (start.deltaT) {
+        jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+    }
+
+    //Swap y and z (needs to negate resulting z)
+    return [
+        jdTDB,
+        start.jdTDB,
+        end.jdTDB,
+        start.w_rad,      //W start (rotation)
+        end.w_rad
     ];
 }

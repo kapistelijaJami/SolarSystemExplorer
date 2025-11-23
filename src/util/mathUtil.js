@@ -9,6 +9,14 @@ export function distance3D(start, end) {
     return Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
 }
 
+export function radiansToDegrees(radians) {
+    return radians * (180 / Math.PI);
+};
+
+export function degreesToRadians(degrees) {
+    return degrees * (Math.PI / 180);
+}
+
 export function hermiteInterpolationVec(params) {
     return hermiteInterpolation(params[0], params[1], params[2], params[3], params[4], params[5], params[6]);
 }
@@ -48,4 +56,8 @@ export function hermiteInterpolation(jdTDB, t0, t1, p0, p1, v0, v1) {
     const vz = dinterp(p0.z, p1.z, v0.z, v1.z);
 
     return [new THREE.Vector3(x, y, z), new THREE.Vector3(vx, vy, vz)];
+}
+
+export function lerp(a, b, t) {
+    return a * (1.0 - t) + (b * t);
 }

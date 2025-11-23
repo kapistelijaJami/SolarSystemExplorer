@@ -12,6 +12,7 @@ export function createRenderer() {
     return renderer;
 }
 
+//TODO: Do selective bloom and make sure atmosphere is visible when bloom not active on it
 export function createBloomComposer(renderer, scene, camera) {
     const bloomComposer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
