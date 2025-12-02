@@ -5,8 +5,8 @@ import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance2D, hermiteInterpolationVec, lerp, degreesToRadians } from "@/util/mathUtil";
-import { utcToJulianDate, jdUtcToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed, normalizeTime } from "@/util/timeUtil";
+import { distance2D, hermiteInterpolationVec, lerp, lerpVec, degreesToRadians } from "@/util/mathUtil";
+import { utcToJulianDate, jdUTCToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed, normalizeTime, playbackSpeedToTimePerSec } from "@/util/timeUtil";
 import { PLAYBACK_SLIDER_VALUE_MIN, PLAYBACK_SLIDER_VALUE_MAX } from "@/constants";
 import { getObject3DUpWorld } from "@/util/gameUtil";
 
@@ -92,7 +92,7 @@ export default class App {
         }
         const simTimeDate = new Date(this.simTimeMs);
 
-        document.getElementById("currentSimTime").innerText = simTimeDate.toISOString().replace("T", " ").replace(/\.\d{3}Z/, ' Z');
+        document.getElementById("currentSimTime").innerText = simTimeDate.toISOString().replace("T", " ").replace(/\.\d{3}Z/, ' UTC');
 
         this.earth.update(delta, this);
         this.starField.setPositionVec(this.camera.getPosition());
@@ -115,10 +115,9 @@ export default class App {
             const interpolatedRot = lerp(orientation[3], orientation[4], normalizedTime);
             this.earth.setRotationW(degreesToRadians(interpolatedRot) + Math.PI / 2); //I think rotating extra 90 degrees makes it correct
             //TODO: create function to convert W to correct angle for prime meridian.
-            //console.log(interpolatedRot + 90);
 
-            //const diff = orientation[4] - orientation[3];
-            //console.log("DailyDifference:", diff, radiansToDegrees(diff), radiansToDegrees(interpolatedRot));
+            const interpolatedOrientation = lerpVec(orientation[5], orientation[6], normalizedTime);
+            this.earth.setOrientation(interpolatedOrientation);
 
             this.camera.setPositionVec(this.earth.getPosition().clone().add(cameraOffset));
             this.controls.setTargetVec(this.earth.getPosition());
@@ -161,7 +160,7 @@ export default class App {
         this.playbackSpeed = roundPlaybackSpeed(speed);
         const speedSlider = document.getElementById("playbackSpeed");
         speedSlider.value = playbackSpeedToSliderValue(this.playbackSpeed);
-        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x";
+        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x (" + playbackSpeedToTimePerSec(this.playbackSpeed) + ")";
     }
 
     darkenNonBloomed(obj) {
@@ -341,7 +340,7 @@ function findEphemerisBracket(jdUTC, data) {
     let jdTDBApprox = jdUTC;
 
     if (data[0].deltaT) {
-        jdTDBApprox = jdUtcToJdTDB(jdUTC, data[0].deltaT);
+        jdTDBApprox = jdUTCToJdTDB(jdUTC, data[0].deltaT);
     }
 
     let low = 0;
@@ -377,7 +376,7 @@ function findEphemerisBracket(jdUTC, data) {
 function createEphemerisArray(jdUTC, start, end) {
     let jdTDB = jdUTC;
     if (start.deltaT) {
-        jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+        jdTDB = jdUTCToJdTDB(jdUTC, start.deltaT);
     }
 
     //Swap y and z (needs to negate resulting z)
@@ -395,7 +394,7 @@ function createEphemerisArray(jdUTC, start, end) {
 function createOrientationArray(jdUTC, start, end) {
     let jdTDB = jdUTC;
     if (start.deltaT) {
-        jdTDB = jdUtcToJdTDB(jdUTC, start.deltaT);
+        jdTDB = jdUTCToJdTDB(jdUTC, start.deltaT);
     }
 
     //Swap y and z (needs to negate resulting z)
@@ -404,6 +403,8 @@ function createOrientationArray(jdUTC, start, end) {
         start.jdTDB,
         end.jdTDB,
         start.w,      //W start (rotation)
-        end.w
+        end.w,
+        new THREE.Vector3(start.pole_vec[0], start.pole_vec[2], -start.pole_vec[1]),
+        new THREE.Vector3(end.pole_vec[0], end.pole_vec[2], -end.pole_vec[1])
     ];
 }

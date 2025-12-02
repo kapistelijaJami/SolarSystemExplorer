@@ -61,3 +61,10 @@ export function hermiteInterpolation(jdTDB, t0, t1, p0, p1, v0, v1) {
 export function lerp(a, b, t) {
     return a * (1.0 - t) + (b * t);
 }
+
+export function lerpVec(aVec, bVec, t) {
+    const x = lerp(aVec.x, bVec.x, t);
+    const y = lerp(aVec.y, bVec.y, t);
+    const z = lerp(aVec.z, bVec.z, t);
+    return new THREE.Vector3(x, y, z);
+}

@@ -18,12 +18,12 @@ downloadEphemeris();
 //downloadOrientationData();
 
 async function downloadEphemeris() {
-    const command = "10";
+    const command = "301";
     const start = "1990-01-01";
     const end = "2040-12-31";
     const timeStep = "1d";
     const center = "@0";
-    const name = "Sun";
+    const name = "Moon";
 
     const params = getEphemerisParams(command, start, end, timeStep, center);
 
@@ -135,7 +135,8 @@ function getEphemerisParams(command, start, end, step, center) {
         VEC_DELTA_T: "YES", //With this can do TDB = UTC + deltaT (should be accurate within a second)
         VEC_TABLE: "3",
         CSV_FORMAT: "YES",
-        TIME_TYPE: "TDB" //Going with Barycentric Dynamical Time for now, should be the most accurate. Might need to convert UTC from client to TDB and use that for positions.
+        TIME_TYPE: "TDB", //Going with Barycentric Dynamical Time for now, should be the most accurate. Might need to convert UTC from client to TDB and use that for positions.
+        EXTRA_PREC: "YES"
     });
     return params;
 }

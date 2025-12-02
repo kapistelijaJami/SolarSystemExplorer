@@ -26,8 +26,8 @@ export default class Earth {
         this.axes = new THREE.AxesHelper(kmToGameUnit(10000));
         this.earthMesh.add(this.axes);
 
-        this.axes2 = new THREE.AxesHelper(kmToGameUnit(20000));
-        this.group.add(this.axes2);
+        this.axesGlobal = new THREE.AxesHelper(kmToGameUnit(20000));
+        this.group.add(this.axesGlobal);
 
         this.sunDirectionVector = new THREE.Vector3(-1, 0, 0); //Placeholder, updated in update()
         this.sunDirectionLine = createSunDirectionLine();
@@ -91,6 +91,10 @@ export default class Earth {
     //W is just rotation around UP axis
     setRotationW(w_rad) {
         this.earthMesh.rotation.y = w_rad;
+    }
+
+    setOrientation(orientationVec) {
+        pointObject3DUpToVector(this.axialTilt, orientationVec);
     }
 
     setSelected(bool) {

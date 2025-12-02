@@ -10,12 +10,12 @@ export function utcToJulianDate(date) {
 }
 
 //Julian date in UTC (in days) to julian date in TDB
-export function jdUtcToJdTDB(jdUTC, deltaT) { //deltaT is VEC_DELTA_T in ephemeris data (TDB - UT)
+export function jdUTCToJdTDB(jdUTC, deltaT) { //deltaT is VEC_DELTA_T in ephemeris data (TDB - UT)
     return jdUTC + deltaT / 86400; //deltaT converted to days, and added to jdUTC => jdTDB
 }
 
 export function utcToJdTDB(date, deltaT) {
-    return jdUtcToJdTDB(utcToJulianDate(date), deltaT);
+    return jdUTCToJdTDB(utcToJulianDate(date), deltaT);
 }
 
 export function sliderValueToRealSpeed(sliderValue) {
@@ -33,4 +33,30 @@ export function roundPlaybackSpeed(playbackSpeed) {
         playbackSpeed = Math.round(playbackSpeed * 10) / 10; //Rounding to nearest 10th
     }
     return playbackSpeed;
+}
+
+export function playbackSpeedToTimePerSec(playbackSpeed) {
+    let unit = "sec";
+
+    if (playbackSpeed >= 3600 * 24 * 365) {
+        playbackSpeed /= 3600 * 24 * 365;
+        unit = "year";
+    } else if (playbackSpeed >= 3600 * 24) {
+        playbackSpeed /= 3600 * 24;
+        unit = "day";
+    } else if (playbackSpeed >= 3600) {
+        playbackSpeed /= 3600;
+        unit = "hr";
+    } else if (playbackSpeed >= 60) {
+        playbackSpeed /= 60;
+        unit = "min";
+    }
+
+    const roundedSpeed = roundPlaybackSpeed(playbackSpeed);
+
+    if (roundedSpeed !== 1) {
+        unit += "s";
+    }
+
+    return roundedSpeed + ` ${unit}/sec`;
 }

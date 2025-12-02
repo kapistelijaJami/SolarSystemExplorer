@@ -10,10 +10,18 @@ import math
 
 spice.furnsh("naif0012.tls")
 spice.furnsh("pck00011.tpc")
+spice.furnsh("earth_latest_high_prec.bpc")
+spice.furnsh("earth_720101_230601.bpc")
+
 
 def earth_ra_dec(et):
     #Matrix m represents the rotation from IAU_EARTH frame to Ecliptic J2000 (ICRF)
-    m = spice.pxform("IAU_EARTH", "ECLIPJ2000", et) #Body frame can be found with spice.cidfrm(bodyId)[1]
+    #Trying first using high precision data, and if it's not available using low precision data
+    #https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/23_lunar-earth_pck-fk.pdf
+    try:
+        m = spice.pxform("ITRF93", "ECLIPJ2000", et)
+    except Exception as e:
+        m = spice.pxform("IAU_EARTH", "ECLIPJ2000", et) #Body frame can be found with spice.cidfrm(bodyId)[1]
     pole_vec = m @ np.array([0, 0, 1.0])  #Earth's north pole
     #pole_vec is unit vector from earth center to north pole
     
@@ -38,7 +46,7 @@ def earth_W(et):
     #print("W0:", W0, " W_rate:", W_rate)
     
     #et - J2000 in days
-    dt = (et - spice.str2et("2000 JAN 01 12:00:00 TDB")) / 86400.0 #dt in days from J2000
+    dt = et / 86400.0 #from seconds to days, dt in days from J2000
     
     w = (W0 + W_rate * dt)
     #print(dt, w)

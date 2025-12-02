@@ -17,8 +17,8 @@ export default class StarField {
         this.starField = new THREE.Mesh(new THREE.SphereGeometry(150000000, 64, 64), starMat); //Radius big enough, that nothing goes beyond it.
 
 
-        this.latLines = createLatitudeLines(150000000, 128, 17, 0xffffff);
-        this.longLines = createLongitudeLines(150000000, 128, 36, kmToGameUnit(10), 0xffffff);
+        this.latLines = createLatitudeLines(140000000, 128, 17, 0xffffff);
+        this.longLines = createLongitudeLines(140000000, 128, 36, kmToGameUnit(10), 0xffffff);
 
         this.starField.add(this.latLines);
         this.starField.add(this.longLines);
