@@ -14,41 +14,47 @@ spice.furnsh("earth_latest_high_prec.bpc")
 spice.furnsh("earth_720101_230601.bpc")
 
 
-def earth_ra_dec(et):
+def get_ra_dec(et, bodyID):
     #Matrix m represents the rotation from IAU_EARTH frame to Ecliptic J2000 (ICRF)
     #Trying first using high precision data, and if it's not available using low precision data
     #https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/23_lunar-earth_pck-fk.pdf
-    try:
-        m = spice.pxform("ITRF93", "ECLIPJ2000", et)
-    except Exception as e:
-        m = spice.pxform("IAU_EARTH", "ECLIPJ2000", et) #Body frame can be found with spice.cidfrm(bodyId)[1]
-    pole_vec = m @ np.array([0, 0, 1.0])  #Earth's north pole
-    #pole_vec is unit vector from earth center to north pole
     
+    if bodyID == 399: #For earth we try with more accurate model first
+        try:
+            m = spice.pxform("ITRF93", "ECLIPJ2000", et)
+        except Exception as e:
+            m = spice.pxform(spice.cidfrm(bodyID)[1], "ECLIPJ2000", et) #Body frame can be found with spice.cidfrm(bodyId)[1]
+    else:
+        m = spice.pxform(spice.cidfrm(bodyID)[1], "ECLIPJ2000", et) #Body frame can be found with spice.cidfrm(bodyId)[1]
+    
+    pole_vec = m @ np.array([0, 0, 1.0])  #North pole
+    #pole_vec is unit vector from earth center to north pole
+
     x, y, z = pole_vec
     
     ra = np.degrees(np.arctan2(y, x)) % 360.0
     dec = np.degrees(np.arcsin(z / np.linalg.norm(pole_vec)))
     return [x, y, z], ra, dec
 
-def earth_W(et):
+def get_W(et, bodyID):
     # PCK variables: BODY399_ constants
     #spice.bodvcd(399, "POLE_RA", 3)[1]
     
     #This returns the polynomial coefficients for the rotation W value. W0 + W1*t + W2*t^2.
     #W0 is rotation at time 0, and W1 is then the rate it changes, since W2 is 0 for earth.
     #t is in days, and values are in degrees.
-    W_params = spice.bodvcd(399, "PM", 3)[1]
+    W_params = spice.bodvcd(bodyID, "PM", 3)[1]
     
     W0 = W_params[0]
     W_rate = W_params[1]  # deg/day
+    W_rate2 = W_params[2]
     
     #print("W0:", W0, " W_rate:", W_rate)
     
     #et - J2000 in days
     dt = et / 86400.0 #from seconds to days, dt in days from J2000
     
-    w = (W0 + W_rate * dt)
+    w = (W0 + W_rate * dt + W_rate2 * dt * dt)
     #print(dt, w)
     return w
 
@@ -65,8 +71,8 @@ print("-" * 50)
 #print(spice.bodc2n(399))
 
 result = {
-    "name": "Earth",
-    "bodyID": "399",
+    "name": "Moon",
+    "bodyID": "301",
     "timeStep": "1d",
     "center": "@0",
     "start": start.strftime("%Y-%m-%d"),
@@ -74,15 +80,15 @@ result = {
     "data": []
 }
 
-testTime = datetime(2000, 1, 1) + timedelta(hours=12)
-etTest1 = spice.utc2et("2000-01-01T12:00:00")
-etTest2 = spice.str2et("2000 JAN 01 12:00:00 TDB") #2000 JAN 01 12:00:00 TDB works
-print(etTest1, etTest2, (etTest1 - etTest2))
+#testTime = datetime(2000, 1, 1) + timedelta(hours=12)
+#etTest1 = spice.utc2et("2000-01-01T12:00:00")
+#etTest2 = spice.str2et("2000 JAN 01 12:00:00 TDB") #2000 JAN 01 12:00:00 TDB works
+#print(etTest1, etTest2, (etTest1 - etTest2))
 
-etTest3 = spice.tparse("2000-01-01T12:00:00")[0]
-print(etTest3, etTest2, etTest3 - etTest2)
+#etTest3 = spice.tparse("2000-01-01T12:00:00")[0]
+#print(etTest3, etTest2, etTest3 - etTest2)
 
-print("-" * 50)
+#print("-" * 50)
 
 
 for i in range(days):
@@ -95,8 +101,8 @@ for i in range(days):
     deltaT = -(et - utcSec) #have to negate (or swap subtraction order), because of the previous assumption
 
     jdTDB = spice.unitim(et, 'ET', 'JDTDB')
-    pole_vec, ra, dec = earth_ra_dec(et)
-    w = earth_W(et)
+    pole_vec, ra, dec = get_ra_dec(et, int(result["bodyID"]))
+    w = get_W(et, int(result["bodyID"]))
 
     result["data"].append({
         "date": f"{t.date()} {t.time()}",

@@ -19,17 +19,14 @@ export function createBloomComposer(renderer, scene, camera) {
     //bloomComposer.renderToScreen = false;
     bloomComposer.addPass(renderPass);
 
-    const bloomParams = {
-        strength: 50,     //intensity of bloom, def: 200
+    const params = {
+        strength: 30,     //intensity of bloom, def: 50
         radius: 1,        //glow radius
-        threshold: 5      //minimum brightness to bloom, def: 1
+        threshold: 2      //minimum brightness to bloom, def: 1
     };
-    const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        bloomParams.strength,
-        bloomParams.radius,
-        bloomParams.threshold
-    );
+    const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+
+    const bloomPass = new UnrealBloomPass(resolution, params.strength, params.radius, params.threshold);
     bloomComposer.addPass(bloomPass);
     return bloomComposer;
 }

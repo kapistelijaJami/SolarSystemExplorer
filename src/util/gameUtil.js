@@ -44,3 +44,19 @@ export function getObject3DUpWorld(object3D) {
     const objectUpWorld = localUp.applyQuaternion(objQuat);
     return objectUpWorld;
 }
+
+export function createLine(color) {
+    const points = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, 0)
+    ];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: color });
+    return new THREE.Line(geometry, material);
+}
+
+//Normalized direction from Vector3 location 'from' to Vector3 location 'to'
+export function direction(from, to) {
+    return to.clone().sub(from).normalize();
+}

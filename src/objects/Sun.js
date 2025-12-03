@@ -1,39 +1,25 @@
 import * as THREE from 'three';
-import { kmToGameUnit, gameUnitToKm3D, kmToGameUnit3D } from '@/util/gameUtil';
+import CelestialBody from './CelestialBody';
 
-export default class Sun {
+export default class Sun extends CelestialBody {
     constructor(radiusKm) {
-        const sunMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            emissive: 0xffffff,
-            emissiveIntensity: 7
-        });
+        super(radiusKm);
 
-        this.sun = new THREE.Mesh(new THREE.SphereGeometry(kmToGameUnit(radiusKm), 64, 64), sunMat);
-        this.sun.position.set(0, 0, 0);
-        this.sun.name = "SunMesh";
+        this.group.position.set(0, 0, 0);
+        this.mesh.name = "SunMesh"; //TODO: Selecting the sun with bloom is harder, might need to create a larger selection mesh when bloom is enabled
 
         const sunLight = new THREE.PointLight(0xffffff, 80000000, 0, 1.5); //Less than square decay for now, since the distances are big
-        this.sun.add(sunLight);
+        this.group.add(sunLight);
     }
 
-    getPosition() {
-        return gameUnitToKm3D(this.sun.position);
-    }
-
-    getPositionGameUnit() {
-        return this.sun.position;
-    }
-
-    setPosition(xKm, yKm, zKm) {
-        this.sun.position.set(kmToGameUnit(xKm), kmToGameUnit(yKm), kmToGameUnit(zKm));
-    }
-
-    setPositionVec(vectorKm) {
-        this.sun.position.copy(kmToGameUnit3D(vectorKm));
-    }
-
-    getObject3D() {
-        return this.sun;
+    getMaterialProperties() {
+        return {
+            texturePath: 'images/8k_sun.jpg',
+            //color: 0xffffff,
+            emissive: 0xffffff, //TODO: If the sun is emissive, it cannot render the color map. Maybe swap materials when getting close
+            emissiveIntensity: 7,
+            roughness: 1,
+            metalness: 0,
+        };
     }
 }

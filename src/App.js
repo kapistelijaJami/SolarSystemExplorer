@@ -3,12 +3,13 @@ import { createRenderer, createBloomComposer } from "@/core/renderer";
 import Earth from '@/objects/Earth';
 import StarField from '@/objects/StarField';
 import Sun from '@/objects/Sun';
+import Moon from '@/objects/Moon';
 import Camera from '@/core/Camera';
 import Controls from '@/core/Controls';
-import { distance2D, hermiteInterpolationVec, lerp, lerpVec, degreesToRadians } from "@/util/mathUtil";
-import { utcToJulianDate, jdUTCToJdTDB, sliderValueToRealSpeed, playbackSpeedToSliderValue, roundPlaybackSpeed, normalizeTime, playbackSpeedToTimePerSec } from "@/util/timeUtil";
+import * as mathUtil from "@/util/mathUtil";
+import * as timeUtil from "@/util/timeUtil";
 import { PLAYBACK_SLIDER_VALUE_MIN, PLAYBACK_SLIDER_VALUE_MAX } from "@/constants";
-import { getObject3DUpWorld } from "@/util/gameUtil";
+import * as gameUtil from "@/util/gameUtil";
 
 export default class App {
 
@@ -29,13 +30,21 @@ export default class App {
         this.scene.add(ambientLight);
 
         //EARTH
-        const realRotationSpeed = 2 * Math.PI / 86164.09; //once in a sidereal day
-        this.earth = new Earth(6371, 23.44, realRotationSpeed);
+        this.earth = new Earth(6371);
         this.earth.setPosition(150000000, 0, 0);
         this.scene.add(this.earth.getObject3D());
 
+        //SUN
+        this.sun = new Sun(696340);
+        this.scene.add(this.sun.getObject3D());
+
+        //MOON
+        this.moon = new Moon(1737.4);
+        this.scene.add(this.moon.getObject3D());
+
         //CAMERA
-        this.camera = new Camera(50, this.earth.getPosition().x - 20000, 0, 0);
+        //for sun: this.sun.getPosition().x - 50000000, earth: this.earth.getPosition().x - 20000, moon this.moon.getPosition().x - 8000
+        this.camera = new Camera(50, this.moon.getPosition().x - 8000, 0, 0); //fov def: 50
         this.scene.add(this.camera.getObject3D());
 
         //RENDERING
@@ -49,10 +58,6 @@ export default class App {
         this.starField.setPositionVec(this.camera.getPosition());
         this.scene.add(this.starField.getObject3D());
 
-        //SUN
-        this.sun = new Sun(696340);
-        this.scene.add(this.sun.getObject3D());
-
         //CONTROLS
         this.controls = new Controls(this.camera, this.renderer, this.earth.getPositionGameUnit()); //TODO: move controls to camera
 
@@ -60,6 +65,8 @@ export default class App {
         //UI CONTROLS
         this.setupUIButtons();
 
+        this.setTargetBody(this.moon);
+        this.moon.selected = false;
         this.setPlaybackSpeed(1);
         this.paused = false;
     }
@@ -95,44 +102,43 @@ export default class App {
         document.getElementById("currentSimTime").innerText = simTimeDate.toISOString().replace("T", " ").replace(/\.\d{3}Z/, ' UTC');
 
         this.earth.update(delta, this);
+        this.moon.update(delta, this);
         this.starField.setPositionVec(this.camera.getPosition());
 
         if (this.ephemeris.done) {
-            const jdUTC = utcToJulianDate(simTimeDate);
+            const jdUTC = timeUtil.utcToJulianDate(simTimeDate);
 
-            //Earth
-            const [sEph, eEph] = findEphemerisBracket(jdUTC, this.ephemeris.earth.ephemeris.data);
-            const ephemeris = createEphemerisArray(jdUTC, sEph, eEph);
-            const interpolatedLoc = hermiteInterpolationVec(ephemeris);
+            let cameraOffset;
+            if (this.targetedBody) {
+                cameraOffset = this.camera.getPosition().clone().sub(this.targetedBody.getPosition()); //Camera offset before we update location, so we can keep the same offset
+            }
 
-            const cameraOffset = this.camera.getPosition().clone().sub(this.earth.getPosition());
-            this.earth.setPositionVec(interpolatedLoc[0]);
+            this.earth.setStateFromEphemeris(jdUTC, this.ephemeris.earth);
+            this.moon.setStateFromEphemeris(jdUTC, this.ephemeris.moon);
+            this.sun.setStateFromEphemeris(jdUTC, this.ephemeris.sun);
 
-            //TODO: Use pole orientation too
-            const [sOr, eOr] = findEphemerisBracket(jdUTC, this.ephemeris.earth.orientation.data);
-            const orientation = createOrientationArray(jdUTC, sOr, eOr);
-            const normalizedTime = normalizeTime(orientation[0], orientation[1], orientation[2]);
-            const interpolatedRot = lerp(orientation[3], orientation[4], normalizedTime);
-            this.earth.setRotationW(degreesToRadians(interpolatedRot) + Math.PI / 2); //I think rotating extra 90 degrees makes it correct
-            //TODO: create function to convert W to correct angle for prime meridian.
+            if (this.targetedBody) {
+                this.camera.setPositionVec(this.targetedBody.getPosition().clone().add(cameraOffset));
 
-            const interpolatedOrientation = lerpVec(orientation[5], orientation[6], normalizedTime);
-            this.earth.setOrientation(interpolatedOrientation);
+                //Moon view from earth (needs to target the moon):
+                //this.camera.setPositionVec(this.earth.getPosition().clone().add(this.moon.getPosition().clone().sub(this.earth.getPosition()).multiplyScalar(0.985)));
 
-            this.camera.setPositionVec(this.earth.getPosition().clone().add(cameraOffset));
-            this.controls.setTargetVec(this.earth.getPosition());
+                this.controls.setTargetVec(this.targetedBody.getPosition());
+            }
 
-            if (this.timeSkip && this.earth.selected) {
+            if (this.timeSkip) {
                 this.timeSkip = false;
-                this.setCameraUpToEarthUp();
+                if (this.targetedBody && this.targetedBody.selected) {
+                    this.setCameraUpToBodyUp(this.targetedBody);
+                }
             }
         }
 
 
         this.count += delta;
         if (this.count >= 1) { //Updates every second
-            if (!this.controls.isUserControlling() && this.earth.selected) {
-                this.setCameraUpToEarthUp(); //Updates the camera up when user isn't controlling the camera, since it drifts very slowly
+            if (!this.controls.isUserControlling() && this.targetedBody && this.targetedBody.selected) {
+                this.setCameraUpToBodyUp(this.targetedBody); //Updates the camera up when user isn't controlling the camera, since it drifts very slowly
             }
             this.count = 0;
         }
@@ -142,6 +148,10 @@ export default class App {
         this.bloomComposer.render();
     }
 
+    /**
+     * Gets playbackSpeed, but returns 0 if paused.
+     * @returns 
+     */
     getPlaybackSpeed() {
         return this.paused ? 0 : this.playbackSpeed;
     }
@@ -157,10 +167,20 @@ export default class App {
     }
 
     setPlaybackSpeed(speed) {
-        this.playbackSpeed = roundPlaybackSpeed(speed);
+        this.playbackSpeed = timeUtil.roundPlaybackSpeed(speed);
         const speedSlider = document.getElementById("playbackSpeed");
-        speedSlider.value = playbackSpeedToSliderValue(this.playbackSpeed);
-        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x (" + playbackSpeedToTimePerSec(this.playbackSpeed) + ")";
+        speedSlider.value = timeUtil.playbackSpeedToSliderValue(this.playbackSpeed);
+        document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x (" + timeUtil.playbackSpeedToTimePerSec(this.playbackSpeed) + ")";
+    }
+
+    focusTarget() {
+        if (!this.targetedBody) {
+            return;
+        }
+
+        const dirToTarget = gameUtil.direction(this.camera.getPosition(), this.targetedBody.getPosition());
+
+        this.camera.setPositionVec(this.targetedBody.getPosition().clone().sub(dirToTarget.multiplyScalar(this.targetedBody.radiusKm * 4)));
     }
 
     darkenNonBloomed(obj) {
@@ -191,7 +211,7 @@ export default class App {
         if (e.button == 0) {
             window.clearTimeout(this.leftClickTimeout);
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (this.leftClickPossible && distance2D(this.leftClickStartLoc, currentLoc) <= 10) {
+            if (this.leftClickPossible && mathUtil.distance2D(this.leftClickStartLoc, currentLoc) <= 10) {
                 const mouse = {};
                 //From -1 to 1
                 mouse.x = (currentLoc.x / window.innerWidth) * 2 - 1;
@@ -206,22 +226,32 @@ export default class App {
                         case "EarthMesh":
                             console.log("Intersection with earth:", intersection);
 
-                            this.earth.setSelected(true);
-                            this.setCameraUpToEarthUp();
+                            this.setTargetBody(this.earth);
                             return;
                         case "SunMesh":
                             console.log("Intersection with sun:", intersection);
+
+                            this.setTargetBody(this.sun);
+                            return;
+                        case "MoonMesh":
+                            console.log("Intersection with moon:", intersection);
+
+                            this.setTargetBody(this.moon);
                             return;
                     }
 
                     this.earth.setSelected(false);
+                    this.moon.setSelected(false);
+                    this.sun.setSelected(false);
                     this.resetCameraUp();
                 }
             }
         } else if (e.button == 2) {
             const currentLoc = { x: e.clientX, y: e.clientY };
-            if (distance2D(this.rightClickStartLoc, currentLoc) <= 10) {
+            if (mathUtil.distance2D(this.rightClickStartLoc, currentLoc) <= 10) {
                 this.earth.setSelected(false);
+                this.moon.setSelected(false);
+                this.sun.setSelected(false);
                 this.resetCameraUp();
             }
         }
@@ -234,11 +264,11 @@ export default class App {
         if (e.code === 'ArrowLeft') {
             const slider = document.getElementById("playbackSpeed");
             const newValue = Math.max(PLAYBACK_SLIDER_VALUE_MIN, parseInt(slider.value) - 1);
-            this.setPlaybackSpeed(sliderValueToRealSpeed(newValue));
+            this.setPlaybackSpeed(timeUtil.sliderValueToRealSpeed(newValue));
         } else if (e.code === 'ArrowRight') {
             const slider = document.getElementById("playbackSpeed");
             const newValue = Math.min(PLAYBACK_SLIDER_VALUE_MAX, parseInt(slider.value) + 1);
-            this.setPlaybackSpeed(sliderValueToRealSpeed(newValue));
+            this.setPlaybackSpeed(timeUtil.sliderValueToRealSpeed(newValue));
         }
 
         if (e.repeat) {
@@ -250,12 +280,21 @@ export default class App {
             //TODO: add movement
         } else if (e.code === 'Space') {
             this.togglePause();
+        } else if (e.code === 'KeyF') {
+            this.focusTarget();
         }
     }
 
-    setCameraUpToEarthUp() {
-        const earthUpWorld = getObject3DUpWorld(this.earth.axialTilt);
-        this.camera.setUpVector(earthUpWorld); //Rotate camera up to match earth up
+    setTargetBody(body) {
+        this.controls.setTargetVec(body.getPosition());
+        this.targetedBody = body;
+        body.setSelected(true);
+        this.setCameraUpToBodyUp(body);
+    }
+
+    setCameraUpToBodyUp(body) {
+        const bodyUpWorld = gameUtil.getObject3DUpWorld(body.axialTilt);
+        this.camera.setUpVector(bodyUpWorld); //Rotate camera up to match earth up
 
         //Must create new OrbitControls, since camera up is baked in on its creation
         this.resetControls();
@@ -280,21 +319,40 @@ export default class App {
         this.ephemeris = {};
         this.ephemeris.done = false;
 
-        const earthEphemerisPromise = fetch('ephemeris/Earth_ephemeris_1990-01-01_2040-12-31.json');
+        const earthPositionPromise = fetch('ephemeris/Earth_ephemeris_1990-01-01_2040-12-31.json');
         //const earthOrientationPromise = fetch('ephemeris/Earth_orientation_1990-01-01_2040-12-31.json');
         const earthOrientationPromise = fetch('ephemeris/Earth_SPICE_orientation_1990-01-01_2040-12-31.json');
-        const sunEphemerisPromise = fetch('ephemeris/Sun_ephemeris_1990-01-01_2040-12-31.json');
+        const moonPositionPromise = fetch('ephemeris/Moon_ephemeris_1990-01-01_2040-12-31.json');
+        const moonOrientationPromise = fetch('ephemeris/Moon_SPICE_orientation_1990-01-01_2040-12-31.json');
+        const sunPositionPromise = fetch('ephemeris/Sun_ephemeris_1990-01-01_2040-12-31.json');
 
-        const [earthEphemerisRes, earthOrientationRes, sunEphemerisRes] = await Promise.all([earthEphemerisPromise, earthOrientationPromise, sunEphemerisPromise]);
-        const [earthEphemeris, earthOrientation, sunEphemeris] = await Promise.all([earthEphemerisRes.json(), earthOrientationRes.json(), sunEphemerisRes.json()]);
+        const [earthPositionRes, earthOrientationRes, moonPositionRes, moonOrientationRes, sunPositionRes] = await Promise.all([
+            earthPositionPromise,
+            earthOrientationPromise,
+            moonPositionPromise,
+            moonOrientationPromise,
+            sunPositionPromise
+        ]);
+        const [earthPosition, earthOrientation, moonPosition, moonOrientation, sunPosition] = await Promise.all([
+            earthPositionRes.json(),
+            earthOrientationRes.json(),
+            moonPositionRes.json(),
+            moonOrientationRes.json(),
+            sunPositionRes.json()
+        ]);
 
         this.ephemeris.earth = {
-            ephemeris: earthEphemeris,
+            position: earthPosition,
             orientation: earthOrientation
         };
 
+        this.ephemeris.moon = {
+            position: moonPosition,
+            orientation: moonOrientation
+        };
+
         this.ephemeris.sun = {
-            ephemeris: sunEphemeris
+            position: sunPosition
         };
 
         this.ephemeris.done = true;
@@ -306,7 +364,7 @@ export default class App {
         document.getElementById("playbackSpeedText").innerText = this.playbackSpeed + "x";
 
         speedSlider.addEventListener("input", (e) => {
-            this.setPlaybackSpeed(sliderValueToRealSpeed(speedSlider.value));
+            this.setPlaybackSpeed(timeUtil.sliderValueToRealSpeed(speedSlider.value));
         });
 
         const playToggleBtn = document.getElementById("playToggle");
@@ -333,78 +391,4 @@ export default class App {
     togglePause() {
         this.setPaused(!this.paused);
     }
-}
-
-//TODO: Add end of data error
-function findEphemerisBracket(jdUTC, data) {
-    let jdTDBApprox = jdUTC;
-
-    if (data[0].deltaT) {
-        jdTDBApprox = jdUTCToJdTDB(jdUTC, data[0].deltaT);
-    }
-
-    let low = 0;
-    let high = data.length - 1;
-
-    //If outside the data, give the extreme points
-    if (jdTDBApprox <= data[0].jdTDB) {
-        const start = data[low];
-        const end = data[low];
-        return [start, end];
-    } else if (jdTDBApprox >= data[high].jdTDB) {
-        const start = data[high];
-        const end = data[high];
-        return [start, end];
-    }
-
-    //Binary search
-    while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        if (data[mid].jdTDB < jdTDBApprox) { //Too low
-            low = mid + 1;
-        } else { //Too high
-            high = mid - 1;
-        }
-    }
-
-    //Low is higher than high, we have a result
-    const start = data[high];
-    const end = data[low];
-    return [start, end];
-}
-
-function createEphemerisArray(jdUTC, start, end) {
-    let jdTDB = jdUTC;
-    if (start.deltaT) {
-        jdTDB = jdUTCToJdTDB(jdUTC, start.deltaT);
-    }
-
-    //Swap y and z (needs to negate resulting z)
-    return [
-        jdTDB,
-        start.jdTDB,
-        end.jdTDB,
-        new THREE.Vector3(start.x, start.z, -start.y),      //pos start
-        new THREE.Vector3(end.x, end.z, -end.y),            //pos end
-        new THREE.Vector3(start.vx, start.vz, -start.vy),   //vel start
-        new THREE.Vector3(end.vx, end.vz, -end.vy)          //vel end
-    ];
-}
-
-function createOrientationArray(jdUTC, start, end) {
-    let jdTDB = jdUTC;
-    if (start.deltaT) {
-        jdTDB = jdUTCToJdTDB(jdUTC, start.deltaT);
-    }
-
-    //Swap y and z (needs to negate resulting z)
-    return [
-        jdTDB,
-        start.jdTDB,
-        end.jdTDB,
-        start.w,      //W start (rotation)
-        end.w,
-        new THREE.Vector3(start.pole_vec[0], start.pole_vec[2], -start.pole_vec[1]),
-        new THREE.Vector3(end.pole_vec[0], end.pole_vec[2], -end.pole_vec[1])
-    ];
 }
